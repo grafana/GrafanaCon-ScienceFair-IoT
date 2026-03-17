@@ -25,7 +25,10 @@
 #define GOLDEN_UID_2 ""
 #define GOLDEN_UID_3 ""
 
-// TODO: Flash the watering unit first, note the MAC from Serial, paste here.
+// Paired watering unit MAC address
+// The watering unit prints its MAC on Serial and LCD at boot.
 // Convert  AA:BB:CC:DD:EE:FF  →  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
-// Watering unit MAC: F0:24:F9:97:5E:C4
+//
+// Uncomment the line below to broadcast to ALL nearby watering units:
+// #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 #define WATERING_MAC {0xF0, 0x24, 0xF9, 0x97, 0x5E, 0xC4}
