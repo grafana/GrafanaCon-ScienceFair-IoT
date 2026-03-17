@@ -22,8 +22,8 @@
 #define GOLDEN_DURATION_SEC 5
 
 // Golden ticket UIDs (shared across all stations)
-#define GOLDEN_UID_1 "04:33:42:73:3E:61:80"
-#define GOLDEN_UID_2 "04:6C:D1:6F:3E:61:80"
+#define GOLDEN_UID_1 ""
+#define GOLDEN_UID_2 ""
 #define GOLDEN_UID_3 ""
 
 // TODO: Flash the watering unit first, note the MAC from Serial, paste here.

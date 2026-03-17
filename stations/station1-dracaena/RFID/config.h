@@ -21,8 +21,8 @@
 #define GOLDEN_DURATION_SEC 5
 
 // Golden ticket UIDs (colon-separated hex, up to 3)
-#define GOLDEN_UID_1 "04:33:42:73:3E:61:80"
-#define GOLDEN_UID_2 "04:6C:D1:6F:3E:61:80"
+#define GOLDEN_UID_1 ""
+#define GOLDEN_UID_2 ""
 #define GOLDEN_UID_3 ""
 
 // Paired watering unit MAC address
