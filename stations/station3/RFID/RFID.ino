@@ -43,6 +43,8 @@ TaskHandle_t  httpTaskHandle = NULL;
 QueueHandle_t httpQueue;
 
 static int winnerCount = 0;
+static String claimedUIDs[3];
+static int    claimedCount = 0;
 
 static unsigned long lastScanTime = 0;
 static const unsigned long SCAN_COOLDOWN_MS = 3000;
@@ -138,9 +140,12 @@ void sendHttpPost(void *parameter) {
     while (true) {
         if (xQueueReceive(httpQueue, &msg, portMAX_DELAY)) {
             if (WiFi.status() == WL_CONNECTED) {
-                // Every scan: m5RFID with plant label
+                // Every scan: m5RFID with plant + tag UID as labels
+                String uid = String(msg.tag_uid);
+                uid.replace(" ", "\\ ");
                 String postData = "m5RFID,location=home,plant=" + String(PLANT_NAME)
-                    + " scan=1";
+                    + ",tag_uid=" + uid
+                    + " scan=1,golden=" + String(msg.golden ? 1 : 0);
 
                 // Golden tickets: add a second line with separate measurement
                 if (msg.golden) {
@@ -348,16 +353,16 @@ void showIdleScreen() {
     StickCP2.Display.fillScreen(BLACK);
 
     StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setTextSize(3);
     StickCP2.Display.setCursor(10, 10);
-    StickCP2.Display.println("Tap to water!");
+    StickCP2.Display.println("Tap to");
+    StickCP2.Display.setCursor(10, 40);
+    StickCP2.Display.println("water!");
 
     StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 45);
-    StickCP2.Display.println("Hold your NFC sticker");
-    StickCP2.Display.setCursor(10, 60);
-    StickCP2.Display.println("against the reader");
+    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setCursor(10, 80);
+    StickCP2.Display.println("Use NFC sticker");
 }
 
 // ──────────────────────────────────────────────
@@ -429,12 +434,27 @@ void loop() {
     bool golden = isGoldenTicket(uidHex);
     uint8_t duration = WATER_DURATION_SEC;
     String prize = "";
+    bool newWinner = false;
 
     if (golden) {
-        winnerCount++;
-        prize = readNDEFText();
-        Serial.printf("*** GOLDEN TICKET! Winner #%d ***\n", winnerCount);
-        if (prize.length() > 0) Serial.println("Prize: " + prize);
+        // Check if this golden UID was already claimed
+        bool alreadyClaimed = false;
+        for (int i = 0; i < claimedCount; i++) {
+            if (claimedUIDs[i].equalsIgnoreCase(uidHex)) {
+                alreadyClaimed = true;
+                break;
+            }
+        }
+        if (!alreadyClaimed && claimedCount < 3) {
+            claimedUIDs[claimedCount++] = uidHex;
+            winnerCount++;
+            newWinner = true;
+            prize = readNDEFText();
+            Serial.printf("*** NEW GOLDEN TICKET! Winner #%d ***\n", winnerCount);
+            if (prize.length() > 0) Serial.println("Prize: " + prize);
+        } else {
+            Serial.println("Golden ticket already claimed, watering only");
+        }
     } else {
         Serial.print("Normal tag on station: ");
         Serial.println(PLANT_NAME);
@@ -457,7 +477,7 @@ void loop() {
     MetricPayload payload = {};
     uidHex.toCharArray(payload.tag_uid, sizeof(payload.tag_uid));
     prize.toCharArray(payload.prize, sizeof(payload.prize));
-    payload.golden = golden;
+    payload.golden = newWinner;
     if (xQueueSend(httpQueue, &payload, 0) != pdPASS) {
         Serial.println("HTTP queue full, dropping metric");
     }

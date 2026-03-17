@@ -294,9 +294,16 @@ void loop() {
     // --- Read moisture sensor ---
     // Lower ADC = wetter soil, higher ADC = drier soil.
     // Invert so that moisture% rises with wetness.
+    // When sensor is disconnected the pin floats low (~0), so treat
+    // any reading below 200 as "no sensor" and report 0%.
     int rawADC       = analogRead(MOISTURE_PIN);
-    int moisturePct  = map(rawADC, 4095, 1000, 0, 100);
-    moisturePct      = constrain(moisturePct, 0, 100);
+    int moisturePct;
+    if (rawADC < 200) {
+        moisturePct = 0;
+    } else {
+        moisturePct = map(rawADC, 4095, 1000, 0, 100);
+        moisturePct = constrain(moisturePct, 0, 100);
+    }
 
     // --- Send moisture to Grafana periodically ---
     if (now - lastMoistureSend >= MOISTURE_SEND_INTERVAL_MS) {
