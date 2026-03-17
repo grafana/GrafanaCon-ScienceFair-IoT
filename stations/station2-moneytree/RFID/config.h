@@ -1,4 +1,4 @@
-// ── Station 2 ───────────────────────────────────────────────────
+// ── Station 2: Money Tree ───────────────────────────────────────
 // Open this folder in Arduino IDE and fill in your credentials before uploading.
 
 // WiFi (2.4 GHz access point)
@@ -15,8 +15,7 @@
 
 // ── Station-specific settings ───────────────────────────────────
 
-// TODO: Set the plant name for this station
-#define PLANT_NAME ""
+#define PLANT_NAME "Money Tree"
 
 #define WATER_DURATION_SEC 5
 #define GOLDEN_DURATION_SEC 5
@@ -28,4 +27,5 @@
 
 // TODO: Flash the watering unit first, note the MAC from Serial, paste here.
 // Convert  AA:BB:CC:DD:EE:FF  →  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
-#define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+// Watering unit MAC: F0:24:F9:97:5E:C4
+#define WATERING_MAC {0xF0, 0x24, 0xF9, 0x97, 0x5E, 0xC4}

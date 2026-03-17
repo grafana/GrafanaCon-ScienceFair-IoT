@@ -1,4 +1,4 @@
-// ── Station 2 ───────────────────────────────────────────────────
+// ── Station 2: Money Tree ───────────────────────────────────────
 // Open this folder in Arduino IDE and fill in your credentials before uploading.
 
 // WiFi (2.4 GHz access point)
@@ -15,8 +15,7 @@
 
 // ── Station-specific settings ───────────────────────────────────
 
-// TODO: Set the plant name for this station
-#define PLANT_NAME ""
+#define PLANT_NAME "Money Tree"
 
 // Pin assignments for the Watering Unit on Grove Port A
 #define MOISTURE_PIN 33  // ADC input for moisture sensor

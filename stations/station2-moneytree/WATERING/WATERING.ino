@@ -142,11 +142,14 @@ void sendHttpPost(void *parameter) {
     while (true) {
         if (xQueueReceive(httpQueue, &msg, portMAX_DELAY)) {
             if (WiFi.status() == WL_CONNECTED) {
+                String plant = String(PLANT_NAME);
+                plant.replace(" ", "\\ ");
+
                 String postData;
                 if (msg.type == METRIC_MOISTURE) {
-                    postData = "m5Watering,location=home,plant=" + String(PLANT_NAME) + " moisture=" + String(msg.moisture);
+                    postData = "m5Watering,location=home,plant=" + plant + " moisture=" + String(msg.moisture);
                 } else {
-                    postData = "m5Watering,location=home,plant=" + String(PLANT_NAME) + " pump_active=" + String(msg.pump_active)
+                    postData = "m5Watering,location=home,plant=" + plant + " pump_active=" + String(msg.pump_active)
                              + ",duration=" + String(msg.duration);
                 }
 

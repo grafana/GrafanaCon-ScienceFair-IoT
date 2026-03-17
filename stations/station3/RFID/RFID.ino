@@ -140,10 +140,14 @@ void sendHttpPost(void *parameter) {
     while (true) {
         if (xQueueReceive(httpQueue, &msg, portMAX_DELAY)) {
             if (WiFi.status() == WL_CONNECTED) {
-                // Every scan: m5RFID with plant + tag UID as labels
+                // Escape spaces in tag values for Influx line protocol
+                String plant = String(PLANT_NAME);
+                plant.replace(" ", "\\ ");
                 String uid = String(msg.tag_uid);
                 uid.replace(" ", "\\ ");
-                String postData = "m5RFID,location=home,plant=" + String(PLANT_NAME)
+
+                // Every scan: m5RFID with plant + tag UID as labels
+                String postData = "m5RFID,location=home,plant=" + plant
                     + ",tag_uid=" + uid
                     + " scan=1,golden=" + String(msg.golden ? 1 : 0);
 
@@ -151,7 +155,7 @@ void sendHttpPost(void *parameter) {
                 if (msg.golden) {
                     String prize = String(msg.prize);
                     if (prize.length() == 0) prize = "GoldenTicket";
-                    postData += "\nm5GoldenTicket,location=home,plant=" + String(PLANT_NAME)
+                    postData += "\nm5GoldenTicket,location=home,plant=" + plant
                         + " scan=1,winner_number=" + String(winnerCount)
                         + ",prize=\"" + prize + "\"";
                 }
