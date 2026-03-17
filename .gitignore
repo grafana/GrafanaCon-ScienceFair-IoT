@@ -1,2 +1,2 @@
-# Config files contain WiFi and Grafana Cloud credentials
-**/config.h
+RFID/config.h
+WATERING/config.h

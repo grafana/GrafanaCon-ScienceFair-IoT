@@ -13,11 +13,14 @@
 // Set to 1 to show debug information on the LCD screen, or 0 to not display
 #define LCD_SHOW_DEBUG_INFO "1"
 
+// Plant name for this station -- used as Grafana label and on the LCD
+#define PLANT_NAME "MyPlant"
+
 // Normal watering duration (seconds) for regular plant tags
 #define WATER_DURATION_SEC 5
 
 // Golden ticket watering duration (seconds) -- the Willy Wonka special
-#define GOLDEN_DURATION_SEC 15
+#define GOLDEN_DURATION_SEC 5
 
 // Golden ticket tag UIDs.
 // Flash the sketch first, scan your special stickers, note the UIDs from Serial,
