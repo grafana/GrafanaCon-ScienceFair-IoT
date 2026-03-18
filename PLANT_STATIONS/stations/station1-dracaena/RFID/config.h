@@ -18,12 +18,6 @@
 #define PLANT_NAME "Dracaena"
 
 #define WATER_DURATION_SEC 5
-#define GOLDEN_DURATION_SEC 5
-
-// Golden ticket UIDs (colon-separated hex, up to 3)
-#define GOLDEN_UID_1 ""
-#define GOLDEN_UID_2 ""
-#define GOLDEN_UID_3 ""
 
 // Paired watering unit MAC address
 // The watering unit prints its MAC on Serial and LCD at boot.

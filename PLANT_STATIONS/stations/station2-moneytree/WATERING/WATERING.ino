@@ -294,23 +294,20 @@ void loop() {
         }
     }
 
-    // --- Read moisture sensor ---
-    // Lower ADC = wetter soil, higher ADC = drier soil.
-    // Invert so that moisture% rises with wetness.
-    // When sensor is disconnected the pin floats low (~0), so treat
-    // any reading below 200 as "no sensor" and report 0%.
-    int rawADC       = analogRead(MOISTURE_PIN);
-    int moisturePct;
-    if (rawADC < 200) {
-        moisturePct = 0;
-    } else {
-        moisturePct = map(rawADC, 4095, 1000, 0, 100);
-        moisturePct = constrain(moisturePct, 0, 100);
-    }
-
-    // --- Send moisture to Grafana periodically ---
+    // --- Read moisture sensor and send to Grafana periodically ---
+    // Only read the ADC at the send interval to limit probe corrosion
+    // and avoid unnecessary display updates from sensor noise.
+    static int moisturePct = 0;
     if (now - lastMoistureSend >= MOISTURE_SEND_INTERVAL_MS) {
         lastMoistureSend = now;
+
+        int rawADC = analogRead(MOISTURE_PIN);
+        if (rawADC < 200) {
+            moisturePct = 0;
+        } else {
+            moisturePct = map(rawADC, 4095, 1000, 0, 100);
+            moisturePct = constrain(moisturePct, 0, 100);
+        }
 
         Serial.printf("Moisture: %d%% (raw=%d)\n", moisturePct, rawADC);
 
@@ -327,7 +324,7 @@ void loop() {
         if (countdown < 0) countdown = 0;
     }
 
-    bool needsRedraw = (moisturePct != lastMoisturePct)
+    bool needsRedraw = (abs(moisturePct - lastMoisturePct) >= 2)
                     || (pumpRunning != lastPumpState)
                     || (countdown != lastCountdown);
 

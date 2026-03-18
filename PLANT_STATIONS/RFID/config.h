@@ -13,24 +13,16 @@
 // LCD debug overlay
 #define LCD_SHOW_DEBUG_INFO "1"
 
-// ── Station-specific settings ───────────────────────────────────
+// Plant name for this station -- used as Grafana label and on the LCD
+#define PLANT_NAME "YourPlant"
 
-// Plant name – appears on the LCD and as a Grafana label
-#define PLANT_NAME ""
-
-// Watering duration (seconds)
+// Watering duration (seconds) for all tags (including golden tickets)
 #define WATER_DURATION_SEC 5
-#define GOLDEN_DURATION_SEC 5
 
-// Golden ticket UIDs (colon-separated hex, up to 3)
-#define GOLDEN_UID_1 ""
-#define GOLDEN_UID_2 ""
-#define GOLDEN_UID_3 ""
-
-// Paired watering unit MAC address
+// MAC address of the Watering unit StickC Plus2.
 // The watering unit prints its MAC on Serial and LCD at boot.
 // Convert  AA:BB:CC:DD:EE:FF  →  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
 //
 // Uncomment the line below to broadcast to ALL nearby watering units:
 // #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-#define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+#define WATERING_MAC {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}

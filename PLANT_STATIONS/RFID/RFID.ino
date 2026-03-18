@@ -3,12 +3,14 @@
 // Scan events are pushed to Grafana Cloud as Influx line-protocol metrics.
 //
 // Tags can be:
-//   - "Golden tickets" identified by UID  -> longer watering + special Grafana metric
-//   - Plant tags with NDEF text records   -> plant name sent as Grafana label
-//   - Blank/unknown tags                  -> identified by UID only
+//   - "Golden tickets" with NDEF text starting with "GOLDEN:" (e.g. "GOLDEN:Free T-Shirt")
+//   - Blank/normal tags -> trigger watering, plant name from config
 //
-// Write plant names to tags using a phone NFC app (e.g. "NFC Tools"):
-//   Add Record > Text > type the plant name (e.g. "Rosemary") > Write
+// Write golden tickets using a phone NFC app (e.g. "NFC Tools"):
+//   Add Record > Text > type "GOLDEN:Your Prize Here" > Write
+//
+// Claimed golden tickets are persisted in NVS (flash) so they survive reboots.
+// Hold Button A during boot to clear the claimed list for a new event day.
 //
 // Hardware: M5StickC Plus2 + Unit RFID2 (MFRC522, I2C 0x28) on Grove Port A
 // Platform: Arduino M5Stack Board Manager
@@ -23,10 +25,14 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <esp_now.h>
+#include <Preferences.h>
 
 #include "config.h"
 
 MFRC522_I2C mfrc522(0x28, -1);
+Preferences prefs;
+
+static const int MAX_GOLDEN = 20;
 
 struct WaterCommand {
     uint8_t command;       // 1 = start pump
@@ -43,7 +49,7 @@ TaskHandle_t  httpTaskHandle = NULL;
 QueueHandle_t httpQueue;
 
 static int winnerCount = 0;
-static String claimedUIDs[3];
+static String claimedUIDs[MAX_GOLDEN];
 static int    claimedCount = 0;
 
 static unsigned long lastScanTime = 0;
@@ -54,9 +60,6 @@ static unsigned long displayHoldTime    = 0;
 static bool          displayShowingMessage = false;
 static const unsigned long GOLDEN_DISPLAY_MS = 30000;
 static const unsigned long NORMAL_DISPLAY_MS = 8000;
-
-static const char* goldenUIDs[] = { GOLDEN_UID_1, GOLDEN_UID_2, GOLDEN_UID_3 };
-static const int   NUM_GOLDEN   = 3;
 
 // ──────────────────────────────────────────────
 // ESP-NOW
@@ -193,11 +196,42 @@ String uidToHex(byte *uid, byte size) {
     return hex;
 }
 
-bool isGoldenTicket(const String &uid) {
-    for (int i = 0; i < NUM_GOLDEN; i++) {
-        if (strlen(goldenUIDs[i]) > 0 && uid.equalsIgnoreCase(goldenUIDs[i])) {
-            return true;
-        }
+// ──────────────────────────────────────────────
+// NVS persistence for claimed golden tickets
+// ──────────────────────────────────────────────
+
+void loadClaimedFromNVS() {
+    prefs.begin("golden", true);
+    claimedCount = prefs.getInt("count", 0);
+    winnerCount  = claimedCount;
+    for (int i = 0; i < claimedCount && i < MAX_GOLDEN; i++) {
+        String key = "uid" + String(i);
+        claimedUIDs[i] = prefs.getString(key.c_str(), "");
+    }
+    prefs.end();
+    Serial.printf("Loaded %d claimed golden tickets from NVS\n", claimedCount);
+}
+
+void saveClaimedToNVS() {
+    prefs.begin("golden", false);
+    prefs.putInt("count", claimedCount);
+    String key = "uid" + String(claimedCount - 1);
+    prefs.putString(key.c_str(), claimedUIDs[claimedCount - 1]);
+    prefs.end();
+}
+
+void clearClaimedNVS() {
+    prefs.begin("golden", false);
+    prefs.clear();
+    prefs.end();
+    claimedCount = 0;
+    winnerCount  = 0;
+    Serial.println("NVS claimed list cleared");
+}
+
+bool isAlreadyClaimed(const String &uid) {
+    for (int i = 0; i < claimedCount; i++) {
+        if (claimedUIDs[i].equalsIgnoreCase(uid)) return true;
     }
     return false;
 }
@@ -299,7 +333,7 @@ String readNDEFText() {
 // Golden ticket LCD animation
 // ──────────────────────────────────────────────
 
-void showGoldenTicket(const String &uid) {
+void showGoldenTicket(const String &prize) {
     for (int flash = 0; flash < 5; flash++) {
         StickCP2.Display.fillScreen(YELLOW);
         delay(100);
@@ -315,15 +349,19 @@ void showGoldenTicket(const String &uid) {
 
     StickCP2.Display.setTextColor(WHITE);
     StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 45);
-    StickCP2.Display.println("Pick up your");
-    StickCP2.Display.setCursor(10, 68);
-    StickCP2.Display.println("gift at booth");
+    StickCP2.Display.setCursor(10, 40);
+    if (prize.length() > 0) {
+        StickCP2.Display.println(prize);
+    } else {
+        StickCP2.Display.println("A prize!");
+    }
 
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 100);
-    StickCP2.Display.println("GOLDEN TICKET");
+    StickCP2.Display.setTextColor(CYAN);
+    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setCursor(10, 70);
+    StickCP2.Display.println("Pick up at");
+    StickCP2.Display.setCursor(10, 93);
+    StickCP2.Display.println("the booth");
 }
 
 // ──────────────────────────────────────────────
@@ -384,8 +422,22 @@ void setup() {
     StickCP2.Display.setTextSize(2);
     StickCP2.Display.setCursor(10, 10);
     StickCP2.Display.println("RFID Reader");
+
+    // Hold Button A during boot to reset golden ticket claimed list
+    StickCP2.update();
+    if (StickCP2.BtnA.isPressed()) {
+        clearClaimedNVS();
+        StickCP2.Display.setTextColor(YELLOW);
+        StickCP2.Display.setCursor(10, 40);
+        StickCP2.Display.println("NVS CLEARED!");
+        delay(2000);
+    } else {
+        loadClaimedFromNVS();
+    }
+
+    StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 40);
+    StickCP2.Display.setCursor(10, 60);
     StickCP2.Display.println("Connecting WiFi...");
 
     Wire.begin(32, 33);
@@ -435,29 +487,24 @@ void loop() {
     Serial.print("Tag UID: ");
     Serial.println(uidHex);
 
-    bool golden = isGoldenTicket(uidHex);
+    // Read NDEF text to detect golden tickets (prefix "GOLDEN:")
+    String ndefText = readNDEFText();
+    bool golden = ndefText.startsWith("GOLDEN:");
     uint8_t duration = WATER_DURATION_SEC;
     String prize = "";
     bool newWinner = false;
 
     if (golden) {
-        // Check if this golden UID was already claimed
-        bool alreadyClaimed = false;
-        for (int i = 0; i < claimedCount; i++) {
-            if (claimedUIDs[i].equalsIgnoreCase(uidHex)) {
-                alreadyClaimed = true;
-                break;
-            }
-        }
-        if (!alreadyClaimed && claimedCount < 3) {
+        prize = ndefText.substring(7);  // everything after "GOLDEN:"
+        if (isAlreadyClaimed(uidHex)) {
+            Serial.println("Golden ticket already claimed, watering only");
+        } else if (claimedCount < MAX_GOLDEN) {
             claimedUIDs[claimedCount++] = uidHex;
             winnerCount++;
             newWinner = true;
-            prize = readNDEFText();
+            saveClaimedToNVS();
             Serial.printf("*** NEW GOLDEN TICKET! Winner #%d ***\n", winnerCount);
-            if (prize.length() > 0) Serial.println("Prize: " + prize);
-        } else {
-            Serial.println("Golden ticket already claimed, watering only");
+            Serial.println("Prize: " + prize);
         }
     } else {
         Serial.print("Normal tag on station: ");
@@ -466,7 +513,7 @@ void loop() {
 
     // --- Update LCD ---
     if (golden) {
-        showGoldenTicket(uidHex);
+        showGoldenTicket(prize);
     } else {
         showPlantTag(String(PLANT_NAME), duration);
     }
