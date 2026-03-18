@@ -1,8 +1,8 @@
 # Local credentials (dev copies with real creds)
 PLANT_STATIONS/RFID/config.h
 PLANT_STATIONS/WATERING/config.h
-PIR/PIR_PRIMARY/config.h
-PIR/PIR_SECONDARY/config.h
+PIR/PIR_AISLE/config.h
+PIR/PIR_DEMO/config.h
 
 # Local credentials backup
 /tmp/
