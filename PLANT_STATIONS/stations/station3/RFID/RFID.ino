@@ -3,7 +3,7 @@
 // Scan events are pushed to Grafana Cloud as Influx line-protocol metrics.
 //
 // Tags can be:
-//   - "Golden tickets" identified by UID  -> longer watering + special Grafana metric
+//   - "Golden stickers" identified by UID  -> longer watering + special Grafana metric
 //   - Plant tags with NDEF text records   -> plant name sent as Grafana label
 //   - Blank/unknown tags                  -> identified by UID only
 //
@@ -151,13 +151,14 @@ void sendHttpPost(void *parameter) {
                     + ",tag_uid=" + uid
                     + " scan=1,golden=" + String(msg.golden ? 1 : 0);
 
-                // Golden tickets: add a second line with separate measurement
+                // Golden stickers: add a second line with separate measurement
                 if (msg.golden) {
                     String prize = String(msg.prize);
                     if (prize.length() == 0) prize = "GoldenTicket";
+                    prize.replace(" ", "\\ ");
                     postData += "\nm5GoldenTicket,location=home,plant=" + plant
-                        + " scan=1,winner_number=" + String(winnerCount)
-                        + ",prize=\"" + prize + "\"";
+                        + ",prize=" + prize
+                        + " scan=1,winner_number=" + String(winnerCount);
                 }
 
                 Serial.print("POST: ");
@@ -193,7 +194,7 @@ String uidToHex(byte *uid, byte size) {
     return hex;
 }
 
-bool isGoldenTicket(const String &uid) {
+bool isGoldenSticker(const String &uid) {
     for (int i = 0; i < NUM_GOLDEN; i++) {
         if (strlen(goldenUIDs[i]) > 0 && uid.equalsIgnoreCase(goldenUIDs[i])) {
             return true;
@@ -296,10 +297,10 @@ String readNDEFText() {
 }
 
 // ──────────────────────────────────────────────
-// Golden ticket LCD animation
+// Golden sticker LCD animation
 // ──────────────────────────────────────────────
 
-void showGoldenTicket(const String &uid) {
+void showGoldenSticker(const String &uid) {
     for (int flash = 0; flash < 5; flash++) {
         StickCP2.Display.fillScreen(YELLOW);
         delay(100);
@@ -323,7 +324,7 @@ void showGoldenTicket(const String &uid) {
     StickCP2.Display.setTextColor(TFT_DARKGREY);
     StickCP2.Display.setTextSize(1);
     StickCP2.Display.setCursor(10, 100);
-    StickCP2.Display.println("GOLDEN TICKET");
+    StickCP2.Display.println("GOLDEN STICKER");
 }
 
 // ──────────────────────────────────────────────
@@ -435,7 +436,7 @@ void loop() {
     Serial.print("Tag UID: ");
     Serial.println(uidHex);
 
-    bool golden = isGoldenTicket(uidHex);
+    bool golden = isGoldenSticker(uidHex);
     uint8_t duration = WATER_DURATION_SEC;
     String prize = "";
     bool newWinner = false;
@@ -454,10 +455,10 @@ void loop() {
             winnerCount++;
             newWinner = true;
             prize = readNDEFText();
-            Serial.printf("*** NEW GOLDEN TICKET! Winner #%d ***\n", winnerCount);
+            Serial.printf("*** NEW GOLDEN STICKER! Winner #%d ***\n", winnerCount);
             if (prize.length() > 0) Serial.println("Prize: " + prize);
         } else {
-            Serial.println("Golden ticket already claimed, watering only");
+            Serial.println("Golden sticker already claimed, watering only");
         }
     } else {
         Serial.print("Normal tag on station: ");
@@ -466,7 +467,7 @@ void loop() {
 
     // --- Update LCD ---
     if (golden) {
-        showGoldenTicket(uidHex);
+        showGoldenSticker(uidHex);
     } else {
         showPlantTag(String(PLANT_NAME), duration);
     }

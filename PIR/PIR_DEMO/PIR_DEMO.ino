@@ -4,7 +4,7 @@
 // has been LOW for SESSION_TIMEOUT_MS (person left). Each session sends
 // a visit count and dwell time (seconds) to Grafana Cloud.
 //
-// A live heartbeat (occupied + session_dwell) is sent every 5s directly
+// A live heartbeat (occupied + session_dwell) is sent every 10s directly
 // from the HTTP task using current state, so it's always fresh.
 //
 // Place inside the booth near the demo table to measure visitor engagement.
@@ -24,7 +24,7 @@
 #define PIR_PIN 33
 
 static const unsigned long SESSION_TIMEOUT_MS    = 10000;
-static const unsigned long HEARTBEAT_INTERVAL_MS = 5000;
+static const unsigned long HEARTBEAT_INTERVAL_MS = 10000;
 
 enum MetricType { METRIC_VISIT, METRIC_DWELL };
 
@@ -94,16 +94,53 @@ void sendHttpPost(void *parameter) {
     unsigned long lastHB = 0;
     bool lastSentOccupied = false;
 
+    int consecutiveFails = 0;
+
+    WiFiClientSecure *client = new WiFiClientSecure;
+    client->setInsecure();
+    client->setTimeout(5);
+
+    auto resetConnection = [&]() {
+        Serial.println("Full connection reset...");
+        client->stop();
+        WiFi.disconnect(true);
+        delay(1000);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        int retries = 0;
+        while (WiFi.status() != WL_CONNECTED && retries < 20) {
+            delay(500);
+            retries++;
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("WiFi reconnected");
+            consecutiveFails = 0;
+        } else {
+            Serial.println("WiFi reconnect failed");
+        }
+    };
+
     auto doPost = [&](const String &postData) -> int {
-        if (WiFi.status() != WL_CONNECTED) return -1;
-        WiFiClientSecure client;
-        client.setInsecure();
+        if (WiFi.status() != WL_CONNECTED) {
+            resetConnection();
+            if (WiFi.status() != WL_CONNECTED) return -1;
+        }
         HTTPClient http;
-        http.begin(client, url);
+        http.setTimeout(5000);
+        http.begin(*client, url);
         http.addHeader("Content-Type", "text/plain");
         http.setAuthorization(GC_USER, GC_PASS);
         int rc = http.POST(postData);
         http.end();
+        client->stop();
+        if (rc > 0) {
+            consecutiveFails = 0;
+        } else {
+            consecutiveFails++;
+            if (consecutiveFails >= 3) {
+                Serial.println("Resetting connection after 3 failures");
+                resetConnection();
+            }
+        }
         return rc;
     };
 
@@ -127,7 +164,8 @@ void sendHttpPost(void *parameter) {
         }
 
         unsigned long now = millis();
-        if (now - lastHB >= HEARTBEAT_INTERVAL_MS) {
+        bool skipHB = consecutiveFails >= 3;
+        if (!skipHB && (now - lastHB >= HEARTBEAT_INTERVAL_MS)) {
             lastHB = now;
 
             bool occupied = inSession;
@@ -150,6 +188,9 @@ void sendHttpPost(void *parameter) {
 
                 lastSentOccupied = occupied;
             }
+        } else if (skipHB && (now - lastHB >= HEARTBEAT_INTERVAL_MS)) {
+            lastHB = now;
+            Serial.println("HB skipped (connection unhealthy)");
         }
     }
 }
@@ -232,7 +273,7 @@ void setup() {
     }
 
     initWifi();
-    xTaskCreate(sendHttpPost, "sendHttpPost", 8192, NULL, 1, &httpTaskHandle);
+    xTaskCreate(sendHttpPost, "sendHttpPost", 10240, NULL, 1, &httpTaskHandle);
 
     drawUI();
 }

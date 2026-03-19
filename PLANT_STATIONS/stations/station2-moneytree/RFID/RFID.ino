@@ -3,13 +3,13 @@
 // Scan events are pushed to Grafana Cloud as Influx line-protocol metrics.
 //
 // Tags can be:
-//   - "Golden tickets" with NDEF text starting with "GOLDEN:" (e.g. "GOLDEN:Free T-Shirt")
+//   - "Golden stickers" with NDEF text starting with "GOLDEN:" (e.g. "GOLDEN:Free T-Shirt")
 //   - Blank/normal tags -> trigger watering, plant name from config
 //
-// Write golden tickets using a phone NFC app (e.g. "NFC Tools"):
+// Write golden stickers using a phone NFC app (e.g. "NFC Tools"):
 //   Add Record > Text > type "GOLDEN:Your Prize Here" > Write
 //
-// Claimed golden tickets are persisted in NVS (flash) so they survive reboots.
+// Claimed golden stickers are persisted in NVS (flash) so they survive reboots.
 // Hold Button A during boot to clear the claimed list for a new event day.
 //
 // Hardware: M5StickC Plus2 + Unit RFID2 (MFRC522, I2C 0x28) on Grove Port A
@@ -154,13 +154,14 @@ void sendHttpPost(void *parameter) {
                     + ",tag_uid=" + uid
                     + " scan=1,golden=" + String(msg.golden ? 1 : 0);
 
-                // Golden tickets: add a second line with separate measurement
+                // Golden stickers: add a second line with separate measurement
                 if (msg.golden) {
                     String prize = String(msg.prize);
                     if (prize.length() == 0) prize = "GoldenTicket";
+                    prize.replace(" ", "\\ ");
                     postData += "\nm5GoldenTicket,location=home,plant=" + plant
-                        + " scan=1,winner_number=" + String(winnerCount)
-                        + ",prize=\"" + prize + "\"";
+                        + ",prize=" + prize
+                        + " scan=1,winner_number=" + String(winnerCount);
                 }
 
                 Serial.print("POST: ");
@@ -197,7 +198,7 @@ String uidToHex(byte *uid, byte size) {
 }
 
 // ──────────────────────────────────────────────
-// NVS persistence for claimed golden tickets
+// NVS persistence for claimed golden stickers
 // ──────────────────────────────────────────────
 
 void loadClaimedFromNVS() {
@@ -209,7 +210,7 @@ void loadClaimedFromNVS() {
         claimedUIDs[i] = prefs.getString(key.c_str(), "");
     }
     prefs.end();
-    Serial.printf("Loaded %d claimed golden tickets from NVS\n", claimedCount);
+    Serial.printf("Loaded %d claimed golden stickers from NVS\n", claimedCount);
 }
 
 void saveClaimedToNVS() {
@@ -330,10 +331,10 @@ String readNDEFText() {
 }
 
 // ──────────────────────────────────────────────
-// Golden ticket LCD animation
+// Golden sticker LCD animation
 // ──────────────────────────────────────────────
 
-void showGoldenTicket(const String &prize) {
+void showGoldenSticker(const String &prize) {
     for (int flash = 0; flash < 5; flash++) {
         StickCP2.Display.fillScreen(YELLOW);
         delay(100);
@@ -423,7 +424,7 @@ void setup() {
     StickCP2.Display.setCursor(10, 10);
     StickCP2.Display.println("RFID Reader");
 
-    // Hold Button A during boot to reset golden ticket claimed list
+    // Hold Button A during boot to reset golden sticker claimed list
     StickCP2.update();
     if (StickCP2.BtnA.isPressed()) {
         clearClaimedNVS();
@@ -487,7 +488,7 @@ void loop() {
     Serial.print("Tag UID: ");
     Serial.println(uidHex);
 
-    // Read NDEF text to detect golden tickets (prefix "GOLDEN:")
+    // Read NDEF text to detect golden stickers (prefix "GOLDEN:")
     String ndefText = readNDEFText();
     bool golden = ndefText.startsWith("GOLDEN:");
     uint8_t duration = WATER_DURATION_SEC;
@@ -497,13 +498,13 @@ void loop() {
     if (golden) {
         prize = ndefText.substring(7);  // everything after "GOLDEN:"
         if (isAlreadyClaimed(uidHex)) {
-            Serial.println("Golden ticket already claimed, watering only");
+            Serial.println("Golden sticker already claimed, watering only");
         } else if (claimedCount < MAX_GOLDEN) {
             claimedUIDs[claimedCount++] = uidHex;
             winnerCount++;
             newWinner = true;
             saveClaimedToNVS();
-            Serial.printf("*** NEW GOLDEN TICKET! Winner #%d ***\n", winnerCount);
+            Serial.printf("*** NEW GOLDEN STICKER! Winner #%d ***\n", winnerCount);
             Serial.println("Prize: " + prize);
         }
     } else {
@@ -513,7 +514,7 @@ void loop() {
 
     // --- Update LCD ---
     if (golden) {
-        showGoldenTicket(prize);
+        showGoldenSticker(prize);
     } else {
         showPlantTag(String(PLANT_NAME), duration);
     }

@@ -21,7 +21,7 @@
 #define WATER_DURATION_SEC 5
 #define GOLDEN_DURATION_SEC 5
 
-// Golden ticket UIDs (shared across all stations)
+// Golden sticker UIDs (shared across all stations)
 #define GOLDEN_UID_1 ""
 #define GOLDEN_UID_2 ""
 #define GOLDEN_UID_3 ""
