@@ -3,6 +3,7 @@ PLANT_STATIONS/RFID/config.h
 PLANT_STATIONS/WATERING/config.h
 PIR/PIR_AISLE/config.h
 PIR/PIR_DEMO/config.h
+ENV-III/config.h
 
 # Local credentials backup
 /tmp/
