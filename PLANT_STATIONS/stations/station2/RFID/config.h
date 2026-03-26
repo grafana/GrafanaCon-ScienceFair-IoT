@@ -1,4 +1,4 @@
-// ── Station 2: Money Tree ───────────────────────────────────────
+// ── Station 2 ──────────────────────────────────────────────────
 // Open this folder in Arduino IDE and fill in your credentials before uploading.
 
 // WiFi (2.4 GHz access point)
@@ -6,7 +6,7 @@
 #define WIFI_PASSWORD ""
 
 // Grafana Cloud – see https://github.com/grafana/diy-iot/blob/main/README.md#sending-metrics
-#define GC_INFLUX_URL ""  // e.g. "influx-prod-58-prod-eu-central-0.grafana.net"
+#define GC_INFLUX_URL ""
 #define GC_USER ""
 #define GC_PASS ""
 
@@ -15,7 +15,7 @@
 
 // ── Station-specific settings ───────────────────────────────────
 
-#define PLANT_NAME "Money Tree"
+#define PLANT_NAME "Plant2"
 
 #define WATER_DURATION_SEC 5
 
@@ -25,4 +25,4 @@
 //
 // Uncomment the line below to broadcast to ALL nearby watering units:
 // #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-#define WATERING_MAC {0xF0, 0x24, 0xF9, 0x97, 0x5E, 0xC4}
+#define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}

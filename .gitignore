@@ -1,6 +1,8 @@
 # Local credentials (dev copies with real creds)
 PLANT_STATIONS/RFID/config.h
 PLANT_STATIONS/WATERING/config.h
+PLANT_STATIONS/stations/*/RFID/config.h
+PLANT_STATIONS/stations/*/WATERING/config.h
 PIR/PIR_AISLE/config.h
 PIR/PIR_DEMO/config.h
 ENV-III/config.h
