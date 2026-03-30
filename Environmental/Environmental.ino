@@ -153,61 +153,83 @@ void setup() {
 }
 
 void loop() {
+    unsigned long loopStart = millis();
+
     int64_t time;
     time = transport.getTimeMillis();
     Serial.printf("\r\n====================================\r\n");
 
-    // Get new updated values from our sensor
     if (qmp6988.update()) {
         pressure = qmp6988.calcPressure();
     }
-    if (sht30.update()) {     // Obtain the data of sht30.
-        temp = sht30.cTemp;      // Store the temperature obtained from sht30.
-        hum  = sht30.humidity;   // Store the humidity obtained from the sht30.
+    if (sht30.update()) {
+        temp = sht30.cTemp;
+        hum  = sht30.humidity;
     } else {
         temp = 0, hum = 0;
-    }    
-    //if (pressure < 950) { ESP.restart(); } // Sometimes this sensor fails, and if we get an invalid reading it's best to just restart the controller to clear it out
-    //if (pressure/100 > 1200) { ESP.restart(); } // Sometimes this sensor fails, and if we get an invalid reading it's best to just restart the controller to clear it out
+    }
     Serial.printf("Temp: %2.1f °C \r\nHumidity: %2.0f%%  \r\nPressure:%2.0f hPa\r\n\n", temp, hum, pressure / 100);
 
-    if (!sgp.IAQmeasure()) {  // Commands the sensor to take a single eCO2/VOC measurement.
+    if (!sgp.IAQmeasure()) {
         Serial.println("eCO2/VOC Measurement failed!");
-        //ESP.restart();
-        //return;
     }
     voc = int(sgp.TVOC);
     co2 = int(sgp.eCO2);
     Serial.printf("eCO2: %d ppm\nTVOC: %d ppb\n\n", co2, voc);
 
-
     lux = dlight.getLUX();
     Serial.printf("Lux (light level): %d Lux\n\n", lux);
 
-    // Gather some internal data as well, about battery states, voltages, charge rates and so on
     int bat_volt = M5.Power.getBatteryVoltage();
     Serial.printf("Battery Volt: %dmv \n", bat_volt);
 
-    int bat_current = M5.Power.getBatteryCurrent();;
+    int bat_current = M5.Power.getBatteryCurrent();
     Serial.printf("Battery Current: %dmv \n", bat_current);
 
-    int bat_level = M5.Power.getBatteryLevel();;
-    Serial.printf("Battery Level: %d% \n\n", bat_level);
+    int bat_level = M5.Power.getBatteryLevel();
+    Serial.printf("Battery Level: %d%%\n\n", bat_level);
 
-    // Now add all of our collected data to the timeseries
     ts_m5stick_temperature.addSample(time, temp);
     ts_m5stick_humidity.addSample(time, hum);
     ts_m5stick_pressure.addSample(time, pressure);
     ts_m5stick_voc.addSample(time, int(voc));
     ts_m5stick_co2.addSample(time, int(co2));
     ts_m5stick_lux.addSample(time, lux);
-
     ts_m5stick_bat_volt.addSample(time, bat_volt);
     ts_m5stick_bat_current.addSample(time, bat_current);
     ts_m5stick_bat_level.addSample(time, bat_level);
 
-    // Now send all of our data to Grafana Cloud!
+    // Check WiFi before attempting send
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi lost — reconnecting");
+        WiFi.disconnect();
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        int retries = 0;
+        while (WiFi.status() != WL_CONNECTED && retries < 20) {
+            delay(500);
+            retries++;
+        }
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi reconnect failed — skipping send");
+            ts_m5stick_temperature.resetSamples();
+            ts_m5stick_humidity.resetSamples();
+            ts_m5stick_pressure.resetSamples();
+            ts_m5stick_bat_volt.resetSamples();
+            ts_m5stick_bat_current.resetSamples();
+            ts_m5stick_bat_level.resetSamples();
+            ts_m5stick_voc.resetSamples();
+            ts_m5stick_co2.resetSamples();
+            ts_m5stick_lux.resetSamples();
+            delay(2000);
+            return;
+        }
+    }
+
+    unsigned long sendStart = millis();
     PromClient::SendResult res = client.send(req);
+    unsigned long sendMs = millis() - sendStart;
+    Serial.printf("Prom send took %lums\n", sendMs);
+
     ts_m5stick_temperature.resetSamples();
     ts_m5stick_humidity.resetSamples();
     ts_m5stick_pressure.resetSamples();
@@ -218,19 +240,21 @@ void loop() {
     ts_m5stick_co2.resetSamples();
     ts_m5stick_lux.resetSamples();
 
-    //M5.Display.clear();  
-    M5.Lcd.fillRect(0,0,256,256,BLACK); 
+    M5.Lcd.fillRect(0, 0, 256, 256, BLACK);
     M5.Display.setTextSize(2);
     M5.Display.setCursor(10, 10);
     M5.Display.setTextColor(ORANGE, BLACK);
     M5.Display.printf("== Grafana Labs ==");
     M5.Display.setTextColor(WHITE, BLACK);
     M5.Display.setCursor(0, 40);
-    M5.Display.printf(" Temp: %2.1f  \r\n Humi: %2.0f%%  \r\n Pressure:%2.0f hPa\r\n", temp, hum, pressure / 100);
-    M5.Display.printf(" VOC: %s  CO2: %s  \r\n LUX:%d\r\n", String(voc), String(co2), lux);
+    M5.Display.printf(" Temp: %2.1f  \r\n Humi: %2.0f%%  \r\n Pres:%2.0f hPa\r\n", temp, hum, pressure / 100);
+    M5.Display.printf(" VOC:%d CO2:%d\r\n LUX:%d\r\n", voc, co2, lux);
 
-    unsigned long startTime = millis(); // Record start time
-    while (millis() - startTime < 1000) { // Loop for 1 second
+    unsigned long loopMs = millis() - loopStart;
+    Serial.printf("Loop total: %lums (send: %lums)\n", loopMs, sendMs);
+
+    unsigned long startTime = millis();
+    while (millis() - startTime < 1000) {
         check_buttonA(res);
     }
 }

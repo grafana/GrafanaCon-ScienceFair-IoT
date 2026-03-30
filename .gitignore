@@ -6,6 +6,6 @@ PLANT_STATIONS/stations/*/WATERING/config.h
 PIR/PIR_AISLE/config.h
 PIR/PIR_DEMO/config.h
 ENV-III/config.h
-
+Environmental/config.h
 # Local credentials backup
 /tmp/
