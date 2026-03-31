@@ -1,4 +1,4 @@
-# GrafanaCon Science Fair — IoT
+# GrafanaCon Science Fair - IoT
 
 Code for the Grafana Science Fair IoT projects at GrafanaCon 2025 & 2026.
 
@@ -6,10 +6,10 @@ Code for the Grafana Science Fair IoT projects at GrafanaCon 2025 & 2026.
 
 | Folder | What it does |
 |--------|-------------|
-| `ENV-III/` | Temperature, humidity, pressure (ENV III Hat) — light sleep for battery operation |
+| `ENV-III/` | Temperature, humidity, pressure (ENV III Hat) - light sleep for battery operation |
 | `Environmental/` | Temperature, humidity, pressure, CO2, VOC, lux (multi-sensor station) |
-| `Plant_Stations/` | RFID + watering stations — NFC tap to water plants, metrics to Grafana |
-| `PIR/` | Motion detection — foot traffic counter and dwell-time tracker |
+| `Plant_Stations/` | RFID + watering stations - NFC tap to water plants, metrics to Grafana |
+| `PIR/` | Motion detection - foot traffic counter and dwell-time tracker |
 | `EarthMoisture/` | Soil moisture sensor |
 | `Heartrate/` | Heart rate monitor |
 | `UltraSonic/` | Distance sensor |
