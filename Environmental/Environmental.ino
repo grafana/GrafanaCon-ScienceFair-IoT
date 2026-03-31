@@ -14,9 +14,15 @@
 #include "Adafruit_SGP30.h"
 #include <M5_DLight.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 
 #include "config.h"
+
+#define HTTP_TIMEOUT_MS     5000
+#define RESTART_AFTER_FAILS 10
+#define SEND_INTERVAL_MS    5000
 
 SHT3X sht30;
 QMP6988 qmp6988;
@@ -30,8 +36,26 @@ int   voc      = 0;
 int   co2      = 0;
 uint16_t lux   = 0;
 
-int sendFailCount   = 0;
-int lastHttpCode    = 0;
+int sendFailCount    = 0;
+int lastHttpCode     = 0;
+unsigned long lastSendTime = 0;
+
+WiFiClientSecure secureClient;
+HTTPClient http;
+bool httpConnected = false;
+
+void setupHttp() {
+    secureClient.setInsecure();
+    secureClient.setTimeout(HTTP_TIMEOUT_MS / 1000);
+    String url = "https://" + String(GC_USER) + ":" + String(GC_PASS) +
+                 "@" + String(GC_INFLUX_URL) + "/api/v1/push/influx/write";
+    http.begin(secureClient, url);
+    http.addHeader("Content-Type", "text/plain");
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setReuse(true);
+    httpConnected = true;
+    Serial.println("HTTP connection initialized");
+}
 
 void initWifi() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -97,16 +121,22 @@ void setup() {
     if (WiFi.status() == WL_CONNECTED) {
         M5.Display.setTextColor(GREEN, BLACK);
         M5.Display.printf("WiFi: OK");
+        setupHttp();
     } else {
         M5.Display.setTextColor(RED, BLACK);
         M5.Display.printf("WiFi: RETRY");
     }
     delay(1000);
 
+    esp_task_wdt_config_t wdt_cfg = { .timeout_ms = 15000, .idle_core_mask = 0, .trigger_panic = true };
+    esp_task_wdt_reconfigure(&wdt_cfg);
+    esp_task_wdt_add(NULL);
+
     Serial.println("End of setup()");
 }
 
 void loop() {
+    esp_task_wdt_reset();
     unsigned long loopStart = millis();
     Serial.printf("\r\n====================================\r\n");
 
@@ -136,49 +166,7 @@ void loop() {
     int bat_level = M5.Power.getBatteryLevel();
     Serial.printf("Bat: %dmV  %d%%\n", bat_volt, bat_level);
 
-    // Reconnect WiFi if needed
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi lost — reconnecting");
-        WiFi.disconnect();
-        initWifi();
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi still down — skipping send");
-            sendFailCount++;
-            delay(2000);
-            return;
-        }
-    }
-
-    // Send via InfluxDB line protocol
-    unsigned long sendStart = millis();
-    HTTPClient http;
-    http.begin("https://" + String(GC_USER) + ":" + String(GC_PASS) +
-               "@" + String(GC_INFLUX_URL) + "/api/v1/push/influx/write");
-    http.addHeader("Content-Type", "text/plain");
-
-    String postData = String(MEASUREMENT_NAME) + ",location=" + String(LOCATION) +
-        " temperature=" + String(temp, 2) +
-        ",humidity="    + String(hum, 2) +
-        ",pressure="    + String(pressure, 2) +
-        ",co2="         + String(co2) +
-        ",voc="         + String(voc) +
-        ",lux="         + String(lux) +
-        ",bat_volt="    + String(bat_volt) +
-        ",bat_level="   + String(bat_level);
-
-    lastHttpCode = http.POST(postData);
-    unsigned long sendMs = millis() - sendStart;
-    http.end();
-
-    if (lastHttpCode == 204) {
-        sendFailCount = 0;
-        Serial.printf("HTTP: 204 OK (%lums)\n", sendMs);
-    } else {
-        sendFailCount++;
-        Serial.printf("HTTP: %d FAIL (%lums) [%d consecutive]\n", lastHttpCode, sendMs, sendFailCount);
-    }
-
-    // Display
+    // Display (always update — keeps screen real-time)
     M5.Lcd.fillRect(0, 0, 256, 256, BLACK);
     M5.Display.setTextSize(2);
     M5.Display.setCursor(10, 10);
@@ -189,8 +177,59 @@ void loop() {
     M5.Display.printf(" Temp: %2.1f  \r\n Humi: %2.0f%%  \r\n Pres:%2.0f hPa\r\n", temp, hum, pressure / 100);
     M5.Display.printf(" VOC:%d CO2:%d\r\n LUX:%d\r\n", voc, co2, lux);
 
+    // Send to Grafana at intervals (not every loop)
+    unsigned long sendMs = 0;
+    if (millis() - lastSendTime >= SEND_INTERVAL_MS) {
+        lastSendTime = millis();
+
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi lost — reconnecting");
+            httpConnected = false;
+            WiFi.disconnect();
+            initWifi();
+            if (WiFi.status() != WL_CONNECTED) {
+                Serial.println("WiFi still down — skipping send");
+                sendFailCount++;
+                return;
+            }
+        }
+
+        if (!httpConnected) {
+            setupHttp();
+        }
+
+        unsigned long sendStart = millis();
+
+        String postData = String(MEASUREMENT_NAME) + ",location=" + String(LOCATION) +
+            " temperature=" + String(temp, 2) +
+            ",humidity="    + String(hum, 2) +
+            ",pressure="    + String(pressure, 2) +
+            ",co2="         + String(co2) +
+            ",voc="         + String(voc) +
+            ",lux="         + String(lux) +
+            ",bat_volt="    + String(bat_volt) +
+            ",bat_level="   + String(bat_level);
+
+        lastHttpCode = http.POST(postData);
+        sendMs = millis() - sendStart;
+
+        if (lastHttpCode == 204) {
+            sendFailCount = 0;
+            Serial.printf("HTTP: 204 OK (%lums)\n", sendMs);
+        } else {
+            sendFailCount++;
+            Serial.printf("HTTP: %d FAIL (%lums) [%d consecutive]\n", lastHttpCode, sendMs, sendFailCount);
+            http.end();
+            httpConnected = false;
+            if (sendFailCount >= RESTART_AFTER_FAILS) {
+                Serial.println("Too many failures — restarting");
+                ESP.restart();
+            }
+        }
+    }
+
     unsigned long loopMs = millis() - loopStart;
-    Serial.printf("Loop: %lums (send: %lums)\n", loopMs, sendMs);
+    if (sendMs > 0) Serial.printf("Loop: %lums (send: %lums)\n", loopMs, sendMs);
 
     // Button A: show system status
     unsigned long btnStart = millis();
