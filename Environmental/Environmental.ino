@@ -1,72 +1,52 @@
-// Written for Grafana Labs to demonstrate how to use the M5Stick CPlus2 with Grafana Cloud at GrafanaCon 2025
-// 2025/04/25
-// Willie Engelbrecht - willie.engelbrecht@grafana.com
-// Introduction to time series: https://grafana.com/docs/grafana/latest/fundamentals/timeseries/
-// M5StickCPlus2: https://docs.m5stack.com/en/core/M5StickC%20PLUS2
-// Register for a free Grafana Cloud account including free metrics and logs: https://grafana.com
+// Environmental sensor station — Temp, Humidity, Pressure, VOC, CO2, Lux → Grafana Cloud
+//
+// Originally by Willie Engelbrecht (GrafanaCon 2025), rewritten for InfluxDB line protocol.
+//
+// Hardware: M5StickC Plus2 + ENV III Hat + SGP30 (VOC/CO2) + DLight (Lux)
+// Dependent Libraries:
+//   M5Unified       — https://github.com/m5stack/M5Unified
+//   M5UnitENV       — https://github.com/m5stack/M5Unit-ENV
+//   Adafruit_SGP30  — https://github.com/adafruit/Adafruit_SGP30
+//   M5_DLight       — M5Stack DLight unit library
 
 #include "M5Unified.h"
-#include "M5UnitENV.h"          // Temp, Humidity, Pressure
-#include "Adafruit_SGP30.h"     // VOC, CO2
-#include <M5_DLight.h>          // Light level
-#include <Unit_Sonic.h>         // Sonic (Distance) sensor
+#include "M5UnitENV.h"
+#include "Adafruit_SGP30.h"
+#include <M5_DLight.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
 
-// ===================================================
-// All the things that needs to be changed 
-// Your local WiFi details
-// Your Grafana Cloud details
-// ===================================================
 #include "config.h"
-#include "utility.h"
 
-// ===================================================
-// Includes - Needed to write Prometheus or Loki metrics/logs to Grafana Cloud
-// No need to change anything here
-// ===================================================
-#include "certificates.h"
-#include <PromLokiTransport.h>
-#include <PrometheusArduino.h>
-
-// ===================================================
-// Global Variables
-// ===================================================
-SHT3X sht30;              // temperature and humidity sensor
-QMP6988 qmp6988;          // pressure sensor
-Adafruit_SGP30 sgp;       // VOC/CO2 sensor
-M5_DLight dlight;         // Light sensor
-SONIC_I2C sonic;          // Sonic (distance) sensor
+SHT3X sht30;
+QMP6988 qmp6988;
+Adafruit_SGP30 sgp;
+M5_DLight dlight;
 
 float temp     = 0.0;
 float hum      = 0.0;
 float pressure = 0.0;
+int   voc      = 0;
+int   co2      = 0;
+uint16_t lux   = 0;
 
-int voc      = 0;
-int co2      = 0;
+int sendFailCount   = 0;
+int lastHttpCode    = 0;
 
-uint16_t lux      = 0;
-
-float distance = 0.0;
-
-// Include for I2C Multiplexer
-#define PAHUB2_ADDRESS 0x70
-
-// Client for Prometheus metrics
-PromLokiTransport transport;
-PromClient client(transport);
-
-// Create a write request for 11 time series.
-WriteRequest req(9, 2048);
-
-// Define all our timeseries
-TimeSeries ts_m5stick_temperature(1, "m5stick_temp", PROM_LABELS);
-TimeSeries ts_m5stick_humidity(1, "m5stick_hum", PROM_LABELS);
-TimeSeries ts_m5stick_pressure(1, "m5stick_pressure", PROM_LABELS);
-TimeSeries ts_m5stick_bat_volt(1, "m5stick_bat_volt", PROM_LABELS);
-TimeSeries ts_m5stick_bat_current(1, "m5stick_bat_current", PROM_LABELS);
-TimeSeries ts_m5stick_bat_level(1, "m5stick_bat_level", PROM_LABELS);
-TimeSeries ts_m5stick_voc(1, "m5stick_voc", PROM_LABELS);
-TimeSeries ts_m5stick_co2(1, "m5stick_co2", PROM_LABELS);
-TimeSeries ts_m5stick_lux(1, "m5stick_lux", PROM_LABELS);
+void initWifi() {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.print("Connecting to WiFi");
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+        if (++attempts > 30) {
+            Serial.println("\nWiFi failed");
+            return;
+        }
+    }
+    Serial.printf("\nConnected, IP: %s\n", WiFi.localIP().toString().c_str());
+}
 
 void setup() {
     Serial.begin(115200);
@@ -76,87 +56,58 @@ void setup() {
     M5.begin(cfg);
 
     M5.Display.setRotation(3);
+    M5.Display.fillScreen(BLACK);
     M5.Display.setTextSize(2);
     M5.Display.setCursor(10, 10);
     M5.Display.setTextColor(ORANGE, BLACK);
     M5.Display.printf("== Grafana Labs ==");
     M5.Display.setTextColor(WHITE, BLACK);
+    M5.Display.setCursor(10, 35);
+    M5.Display.printf("Environmental");
+    M5.Display.setCursor(10, 60);
+    M5.Display.setTextColor(CYAN, BLACK);
+    M5.Display.printf("Loc: %s", LOCATION);
+    M5.Display.setCursor(10, 85);
+    M5.Display.setTextColor(WHITE, BLACK);
+    M5.Display.printf("Connecting...");
 
-    Wire.begin();       // Wire init, adding the I2C bus. 
-    if (!qmp6988.begin(&Wire, QMP6988_SLAVE_ADDRESS_L, 32, 33, 400000U)) {
-        Serial.println("Couldn't find QMP6988");
-    }
-    else {
-      Serial.println("Found Pressure sensor!");
-    }
-    if (!sht30.begin(&Wire, SHT3X_I2C_ADDR, 32, 33, 400000U)) {
-        Serial.println("Couldn't find SHT3X");
-    }
-    else {
-      Serial.println("Found Temp/Humidity sensor!");
-    }
-    if (!sgp.begin()) {  // Init the sensor
-        Serial.println("VOC/CO2 Sensor not found!");
-    }
-    else {
-      Serial.println("Found VoC/CO2 Sensor!");
-    }
+    Wire.begin();
+    if (!qmp6988.begin(&Wire, QMP6988_SLAVE_ADDRESS_L, 32, 33, 400000U))
+        Serial.println("QMP6988 not found");
+    else
+        Serial.println("Found Pressure sensor");
 
-    // Initialize the Lux sensor
+    if (!sht30.begin(&Wire, SHT3X_I2C_ADDR, 32, 33, 400000U))
+        Serial.println("SHT3X not found");
+    else
+        Serial.println("Found Temp/Humidity sensor");
+
+    if (!sgp.begin())
+        Serial.println("SGP30 not found");
+    else
+        Serial.println("Found VOC/CO2 sensor");
+
     dlight.begin();
     dlight.setMode(CONTINUOUSLY_H_RESOLUTION_MODE2);
+    Serial.println("Found Lux sensor");
 
-    M5.Display.setCursor(10, 30);
-    M5.Display.printf("Hello, %s", YOUR_NAME);
-    M5.Display.setCursor(10, 60);
-    M5.Display.printf("Please wait:\r\n Connecting to WiFi");
+    initWifi();
 
-    // Connecting to Wifi
-    transport.setUseTls(true);
-    transport.setCerts(grafanaCert, strlen(grafanaCert));
-    transport.setWifiSsid(WIFI_SSID);
-    transport.setWifiPass(WIFI_PASSWORD);
-    transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
-    if (!transport.begin()) {
-        Serial.println(transport.errmsg);
-        while (true) {};        
+    M5.Display.setCursor(10, 110);
+    if (WiFi.status() == WL_CONNECTED) {
+        M5.Display.setTextColor(GREEN, BLACK);
+        M5.Display.printf("WiFi: OK");
+    } else {
+        M5.Display.setTextColor(RED, BLACK);
+        M5.Display.printf("WiFi: RETRY");
     }
+    delay(1000);
 
-    M5.Display.setCursor(10, 105);
-    M5.Display.setTextColor(GREEN, BLACK);
-    M5.Display.printf("Connected!");
-    delay(1500); 
-
-    // Configure the Grafana Cloud client
-    client.setUrl(GC_URL);
-    client.setPath((char*)GC_PATH);
-    client.setPort(GC_PORT);
-    client.setUser(GC_USER);
-    client.setPass(GC_PASS);
-    client.setDebug(Serial);  // Remove this line to disable debug logging of the client.
-    if (!client.begin()) {
-        Serial.println(client.errmsg);
-        while (true) {};
-    }
-
-    // Add our TimeSeries to the WriteRequest
-    req.addTimeSeries(ts_m5stick_temperature);
-    req.addTimeSeries(ts_m5stick_humidity);
-    req.addTimeSeries(ts_m5stick_pressure);
-    req.addTimeSeries(ts_m5stick_bat_volt);
-    req.addTimeSeries(ts_m5stick_bat_current);
-    req.addTimeSeries(ts_m5stick_bat_level);
-    req.addTimeSeries(ts_m5stick_voc);
-    req.addTimeSeries(ts_m5stick_co2);
-    req.addTimeSeries(ts_m5stick_lux);
     Serial.println("End of setup()");
 }
 
 void loop() {
     unsigned long loopStart = millis();
-
-    int64_t time;
-    time = transport.getTimeMillis();
     Serial.printf("\r\n====================================\r\n");
 
     if (qmp6988.update()) {
@@ -166,80 +117,68 @@ void loop() {
         temp = sht30.cTemp;
         hum  = sht30.humidity;
     } else {
-        temp = 0, hum = 0;
+        temp = 0;
+        hum = 0;
     }
-    Serial.printf("Temp: %2.1f °C \r\nHumidity: %2.0f%%  \r\nPressure:%2.0f hPa\r\n\n", temp, hum, pressure / 100);
+    Serial.printf("Temp: %2.1f C  Hum: %2.0f%%  Pres: %2.0f hPa\n", temp, hum, pressure / 100);
 
     if (!sgp.IAQmeasure()) {
-        Serial.println("eCO2/VOC Measurement failed!");
+        Serial.println("VOC/CO2 measurement failed");
     }
     voc = int(sgp.TVOC);
     co2 = int(sgp.eCO2);
-    Serial.printf("eCO2: %d ppm\nTVOC: %d ppb\n\n", co2, voc);
+    Serial.printf("eCO2: %d ppm  TVOC: %d ppb\n", co2, voc);
 
     lux = dlight.getLUX();
-    Serial.printf("Lux (light level): %d Lux\n\n", lux);
+    Serial.printf("Lux: %d\n", lux);
 
-    int bat_volt = M5.Power.getBatteryVoltage();
-    Serial.printf("Battery Volt: %dmv \n", bat_volt);
-
-    int bat_current = M5.Power.getBatteryCurrent();
-    Serial.printf("Battery Current: %dmv \n", bat_current);
-
+    int bat_volt  = M5.Power.getBatteryVoltage();
     int bat_level = M5.Power.getBatteryLevel();
-    Serial.printf("Battery Level: %d%%\n\n", bat_level);
+    Serial.printf("Bat: %dmV  %d%%\n", bat_volt, bat_level);
 
-    ts_m5stick_temperature.addSample(time, temp);
-    ts_m5stick_humidity.addSample(time, hum);
-    ts_m5stick_pressure.addSample(time, pressure);
-    ts_m5stick_voc.addSample(time, int(voc));
-    ts_m5stick_co2.addSample(time, int(co2));
-    ts_m5stick_lux.addSample(time, lux);
-    ts_m5stick_bat_volt.addSample(time, bat_volt);
-    ts_m5stick_bat_current.addSample(time, bat_current);
-    ts_m5stick_bat_level.addSample(time, bat_level);
-
-    // Check WiFi before attempting send
+    // Reconnect WiFi if needed
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost — reconnecting");
         WiFi.disconnect();
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        int retries = 0;
-        while (WiFi.status() != WL_CONNECTED && retries < 20) {
-            delay(500);
-            retries++;
-        }
+        initWifi();
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi reconnect failed — skipping send");
-            ts_m5stick_temperature.resetSamples();
-            ts_m5stick_humidity.resetSamples();
-            ts_m5stick_pressure.resetSamples();
-            ts_m5stick_bat_volt.resetSamples();
-            ts_m5stick_bat_current.resetSamples();
-            ts_m5stick_bat_level.resetSamples();
-            ts_m5stick_voc.resetSamples();
-            ts_m5stick_co2.resetSamples();
-            ts_m5stick_lux.resetSamples();
+            Serial.println("WiFi still down — skipping send");
+            sendFailCount++;
             delay(2000);
             return;
         }
     }
 
+    // Send via InfluxDB line protocol
     unsigned long sendStart = millis();
-    PromClient::SendResult res = client.send(req);
+    HTTPClient http;
+    http.begin("https://" + String(GC_USER) + ":" + String(GC_PASS) +
+               "@" + String(GC_INFLUX_URL) + "/api/v1/push/influx/write");
+    http.addHeader("Content-Type", "text/plain");
+
+    String postData = String(MEASUREMENT_NAME) + ",location=" + String(LOCATION) +
+        " temperature=" + String(temp, 2) +
+        ",humidity="    + String(hum, 2) +
+        ",pressure="    + String(pressure, 2) +
+        ",co2="         + String(co2) +
+        ",voc="         + String(voc) +
+        ",lux="         + String(lux) +
+        ",bat_volt="    + String(bat_volt) +
+        ",bat_level="   + String(bat_level);
+
+    lastHttpCode = http.POST(postData);
     unsigned long sendMs = millis() - sendStart;
-    Serial.printf("Prom send took %lums\n", sendMs);
+    http.end();
 
-    ts_m5stick_temperature.resetSamples();
-    ts_m5stick_humidity.resetSamples();
-    ts_m5stick_pressure.resetSamples();
-    ts_m5stick_bat_volt.resetSamples();
-    ts_m5stick_bat_current.resetSamples();
-    ts_m5stick_bat_level.resetSamples();
-    ts_m5stick_voc.resetSamples();
-    ts_m5stick_co2.resetSamples();
-    ts_m5stick_lux.resetSamples();
+    if (lastHttpCode == 204) {
+        sendFailCount = 0;
+        Serial.printf("HTTP: 204 OK (%lums)\n", sendMs);
+    } else {
+        sendFailCount++;
+        Serial.printf("HTTP: %d FAIL (%lums) [%d consecutive]\n", lastHttpCode, sendMs, sendFailCount);
+    }
 
+    // Display
     M5.Lcd.fillRect(0, 0, 256, 256, BLACK);
     M5.Display.setTextSize(2);
     M5.Display.setCursor(10, 10);
@@ -251,10 +190,46 @@ void loop() {
     M5.Display.printf(" VOC:%d CO2:%d\r\n LUX:%d\r\n", voc, co2, lux);
 
     unsigned long loopMs = millis() - loopStart;
-    Serial.printf("Loop total: %lums (send: %lums)\n", loopMs, sendMs);
+    Serial.printf("Loop: %lums (send: %lums)\n", loopMs, sendMs);
 
-    unsigned long startTime = millis();
-    while (millis() - startTime < 1000) {
-        check_buttonA(res);
+    // Button A: show system status
+    unsigned long btnStart = millis();
+    while (millis() - btnStart < 1000) {
+        M5.update();
+        if (M5.BtnA.wasPressed()) {
+            M5.Lcd.fillRect(0, 0, 256, 256, BLACK);
+            M5.Display.setCursor(10, 10);
+            M5.Display.setTextColor(ORANGE, BLACK);
+            M5.Display.printf("== Status ==");
+            M5.Display.setTextColor(WHITE, BLACK);
+
+            M5.Display.setCursor(0, 40);
+            M5.Display.printf(" WiFi: ");
+            if (WiFi.status() == WL_CONNECTED) {
+                M5.Display.setTextColor(GREEN, BLACK);
+                M5.Display.printf("OK (%ddBm)", WiFi.RSSI());
+            } else {
+                M5.Display.setTextColor(RED, BLACK);
+                M5.Display.printf("Disconnected");
+            }
+
+            M5.Display.setTextColor(WHITE, BLACK);
+            M5.Display.setCursor(0, 65);
+            M5.Display.printf(" HTTP: ");
+            if (lastHttpCode == 204) {
+                M5.Display.setTextColor(GREEN, BLACK);
+                M5.Display.printf("OK");
+            } else {
+                M5.Display.setTextColor(RED, BLACK);
+                M5.Display.printf("%d (fail:%d)", lastHttpCode, sendFailCount);
+            }
+
+            M5.Display.setTextColor(WHITE, BLACK);
+            M5.Display.setCursor(0, 90);
+            M5.Display.printf(" Bat: %dmV %d%%", bat_volt, bat_level);
+            M5.Display.setCursor(0, 115);
+            M5.Display.printf(" Up: %lum", millis() / 60000);
+        }
+        delay(50);
     }
 }
