@@ -1,21 +1,34 @@
-# GrafanaCon-ScienceFair-IoT
-Repository for the Grafana Science Fair at GrafanaCon
+# GrafanaCon Science Fair — IoT
 
-PDF for the full presentation how each project was built: [PDF](https://github.com/grafana/GrafanaCon2025-ScienceFair-IoT/blob/main/GrafanaCON%202025%20Science%20fair%20-%20Grafana%20you%20can%20touch.pdf)
+Code for the Grafana Science Fair IoT projects at GrafanaCon 2025 & 2026.
 
-This repo contains all the code that was used to build the different sensors at GrafanaCON 2025:
-- Sonic (Distance Sensor)
-- Environment Sensor (Temperature, Humidity, Pressure)
-- CO2 / Organic Compounds
-- Light / Brightness
-- M5 Drone
-- Earth / Soil Moisture
-- Heart Rate
+## Projects
+
+| Folder | What it does |
+|--------|-------------|
+| `ENV-III/` | Temperature, humidity, pressure (ENV III Hat) — light sleep for battery operation |
+| `Environmental/` | Temperature, humidity, pressure, CO2, VOC, lux (multi-sensor station) |
+| `Plant_Stations/` | RFID + watering stations — NFC tap to water plants, metrics to Grafana |
+| `PIR/` | Motion detection — foot traffic counter and dwell-time tracker |
+| `EarthMoisture/` | Soil moisture sensor |
+| `Heartrate/` | Heart rate monitor |
+| `UltraSonic/` | Distance sensor |
+| `dashboards/` | Grafana dashboard JSON exports (2025, 2026) |
+
+## Drones (separate repo)
+
 - [M5Stamp Drone Controller/Joystick](https://github.com/grafana/M5StampFlyController-GrafanaCon2025)
 - [M5Stamp Drone Actual](https://github.com/grafana/M5StampFly-GrafanaCon2025)
 
+## Hardware
 
-[Live Dashboard](https://grafanacon.grafana.net/public-dashboards/04f1088996984d5a99875aed48c3f5c3?refresh=auto&from=now-3h&to=now&timezone=browser) at GrafanaCON
+Built on the **M5StickC Plus2** with various M5Stack sensor units, programmed via Arduino IDE.
 
-![image](https://github.com/user-attachments/assets/98983f32-4bbf-489a-836c-e17307522550)
+## Getting started
 
+1. Clone this repo
+2. Open a project folder in Arduino IDE
+3. Copy and fill in `config.h` with your WiFi and Grafana Cloud credentials
+4. Select board **M5StickCPlus2**, flash
+
+See individual project READMEs for details.
