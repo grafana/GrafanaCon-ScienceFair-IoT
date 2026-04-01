@@ -5,7 +5,8 @@
 // M5StickCPlus2: https://docs.m5stack.com/en/core/M5StickC%20PLUS2
 // Register for a free Grafana Cloud account including free metrics and logs: https://grafana.com
 
-#include <M5StickCPlus.h>
+#include <M5StickCPlus2.h>
+#include <WiFi.h>
 #include <Wire.h>
 #include <Unit_Sonic.h>
 #include <HTTPClient.h>
@@ -13,7 +14,7 @@
 #include "config.h"
 
 
-TFT_eSprite Disbuff = TFT_eSprite(&M5.Lcd);
+M5Canvas Disbuff(&M5.Lcd);
 SONIC_I2C sensor;
 
 #define MAX_BRIGHTNESS 255
@@ -89,7 +90,7 @@ void setup() {
     xTaskCreate(
         sendHttpPost,    // Function
         "sendHttpPost",  // Task name
-        4096,            // Stack size
+        16384,           // Stack size
         NULL,            // Task parameters
         1,               // Priority
         &WiFiTaskHandle  // Task handle
@@ -113,8 +114,7 @@ void sendHttpPost(void *parameter) {
                 postData = "m5UltraSonic,location=home distance=" + String(message.distance);
 
                 int httpResponseCode = http.POST(postData);
-
-              //  http.end();
+                http.getString();
             }
         }
         delay(50);
@@ -154,8 +154,8 @@ void loop() {
         lastSendTime = millis();
         data_to_send d = {red};
 
-        if (xQueueSend(WiFiQueue, &d, portMAX_DELAY) != pdPASS) {
-            Serial.println("Queue is full! Failed to send message.");
+        if (xQueueSend(WiFiQueue, &d, 0) != pdPASS) {
+            Serial.println("Queue is full! Skipping this reading.");
         }
     }
 
