@@ -4,8 +4,9 @@
 // Introduction to time series: https://grafana.com/docs/grafana/latest/fundamentals/timeseries/
 // M5StickCPlus2: https://docs.m5stack.com/en/core/M5StickC%20PLUS2
 // Register for a free Grafana Cloud account including free metrics and logs: https://grafana.com
+// NOTE: This sketch targets the M5StickC Plus (v1), not the Plus2. For Plus2, swap M5StickCPlus.h for M5StickCPlus2.h and TFT_eSprite for M5Canvas.
 
-#include <M5StickCPlus2.h>
+#include <M5StickCPlus.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <Unit_Sonic.h>
@@ -14,7 +15,7 @@
 #include "config.h"
 
 
-M5Canvas Disbuff(&M5.Lcd);
+TFT_eSprite Disbuff = TFT_eSprite(&M5.Lcd);
 SONIC_I2C sensor;
 
 #define MAX_BRIGHTNESS 255
@@ -79,7 +80,7 @@ void setup() {
     sensor.begin();
 
     data_to_send d = {0};
-    WiFiQueue = xQueueCreate(5, sizeof(d));
+    WiFiQueue = xQueueCreate(1, sizeof(d));
     if (WiFiQueue == NULL) {
         Serial.println("Error creating queue!");
         return;
@@ -103,7 +104,7 @@ void sendHttpPost(void *parameter) {
     HTTPClient http;
                
     http.begin("https://" + String(GC_USER) + ":" + String(GC_PASS) + "@" + String(GC_INFLUX_URL) + "/api/v1/push/influx/write");  // Specify the URL
-    http.addHeader("Content-Type", "application/json");  // Set content type
+    http.addHeader("Content-Type", "text/plain");
 
     while (true) {
         // Wait for data from the queue (Blocks until data arrives)
@@ -114,7 +115,8 @@ void sendHttpPost(void *parameter) {
                 postData = "m5UltraSonic,location=home distance=" + String(message.distance);
 
                 int httpResponseCode = http.POST(postData);
-                http.getString();
+
+              //  http.end();
             }
         }
         delay(50);
@@ -154,9 +156,7 @@ void loop() {
         lastSendTime = millis();
         data_to_send d = {red};
 
-        if (xQueueSend(WiFiQueue, &d, 0) != pdPASS) {
-            Serial.println("Queue is full! Skipping this reading.");
-        }
+        xQueueOverwrite(WiFiQueue, &d);
     }
 
     if ((red > 20) && (red < 4000)) {
