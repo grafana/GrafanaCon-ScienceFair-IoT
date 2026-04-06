@@ -7,5 +7,6 @@ PIR/PIR_AISLE/config.h
 PIR/PIR_DEMO/config.h
 ENV-III/config.h
 Environmental/config.h
+UltraSonic/config.h
 # Local credentials backup
 /tmp/
