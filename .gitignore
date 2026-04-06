@@ -5,6 +5,7 @@ Plant_Stations/stations/*/RFID/config.h
 Plant_Stations/stations/*/WATERING/config.h
 PIR/PIR_AISLE/config.h
 PIR/PIR_DEMO/config.h
+PIR/TOF4M_AISLE/config.h
 ENV-III/config.h
 Environmental/config.h
 UltraSonic/config.h
