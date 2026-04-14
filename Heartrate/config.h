@@ -3,7 +3,10 @@
 #define WIFI_PASSWORD ""
 
 // For more information on where to get these values see: https://github.com/grafana/diy-iot/blob/main/README.md#sending-metrics
-#define GC_INFLUX_URL ""  // example: "influx-blocks-prod-us-central1.grafana.net"
+// NOTE: the hostname may say "prometheus-prod-…" or "influx-prod-…" —
+// both point to the same Mimir backend and accept InfluxDB line protocol
+// via /api/v1/push/influx/write.
+#define GC_INFLUX_URL ""
 #define GC_USER ""
 #define GC_PASS ""
 
