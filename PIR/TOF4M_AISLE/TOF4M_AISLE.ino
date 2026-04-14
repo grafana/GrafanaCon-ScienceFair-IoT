@@ -92,7 +92,7 @@ void sendHttpPost(void *parameter) {
             String location = String(LOCATION);
             location.replace(" ", "\\ ");
 
-            String postData = "m5PIR,location=" + location
+            String postData = "m5ToFBeam,location=" + location
                 + ",zone=" + zone
                 + " count=" + String(msg.count)
                 + "\nm5ToF,location=" + location
@@ -124,31 +124,57 @@ void sendHttpPost(void *parameter) {
 // LCD
 // ──────────────────────────────────────────────
 
+static int     prevCount    = -1;
+static int     prevDist     = -1;
+static int     prevBlocked  = -1;
+
 void drawUI() {
-    StickCP2.Display.fillScreen(BLACK);
+    bool full = (prevCount == -1);
+    bool countChanged   = (eventCount != prevCount);
+    bool distChanged    = (lastDistanceMM != prevDist);
+    bool blockedChanged = (beamBlocked != prevBlocked);
 
-    StickCP2.Display.setTextColor(CYAN);
-    StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 5);
-    StickCP2.Display.printf("ToF: %s", ZONE);
+    if (!full && !countChanged && !distChanged && !blockedChanged) return;
 
-    StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextSize(3);
-    StickCP2.Display.setCursor(10, 35);
-    StickCP2.Display.printf("%d", eventCount);
+    if (full) {
+        StickCP2.Display.fillScreen(BLACK);
+        StickCP2.Display.setTextColor(CYAN);
+        StickCP2.Display.setTextSize(2);
+        StickCP2.Display.setCursor(10, 5);
+        StickCP2.Display.printf("ToF: %s", ZONE);
 
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 70);
-    StickCP2.Display.println("detections");
+        StickCP2.Display.setTextColor(TFT_DARKGREY);
+        StickCP2.Display.setTextSize(2);
+        StickCP2.Display.setCursor(10, 70);
+        StickCP2.Display.println("detections");
+    }
 
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 95);
-    StickCP2.Display.printf("Dist:%dmm <%d >%d", lastDistanceMM, BEAM_ENTER_MM, BEAM_EXIT_MM);
+    if (full || countChanged) {
+        StickCP2.Display.fillRect(10, 35, 200, 30, BLACK);
+        StickCP2.Display.setTextColor(GREEN);
+        StickCP2.Display.setTextSize(3);
+        StickCP2.Display.setCursor(10, 35);
+        StickCP2.Display.printf("%d", eventCount);
+        prevCount = eventCount;
+    }
 
-    StickCP2.Display.setCursor(10, 110);
-    StickCP2.Display.printf("Beam: %s", beamBlocked ? "BLOCKED" : "clear");
+    if (full || distChanged) {
+        StickCP2.Display.fillRect(10, 95, 226, 10, BLACK);
+        StickCP2.Display.setTextColor(TFT_DARKGREY);
+        StickCP2.Display.setTextSize(1);
+        StickCP2.Display.setCursor(10, 95);
+        StickCP2.Display.printf("Dist:%dmm <%d >%d", lastDistanceMM, BEAM_ENTER_MM, BEAM_EXIT_MM);
+        prevDist = lastDistanceMM;
+    }
+
+    if (full || blockedChanged) {
+        StickCP2.Display.fillRect(10, 110, 226, 10, BLACK);
+        StickCP2.Display.setTextColor(beamBlocked ? RED : TFT_DARKGREY);
+        StickCP2.Display.setTextSize(1);
+        StickCP2.Display.setCursor(10, 110);
+        StickCP2.Display.printf("Beam: %s", beamBlocked ? "BLOCKED" : "clear");
+        prevBlocked = beamBlocked;
+    }
 }
 
 void flashDetection() {
@@ -161,6 +187,7 @@ void flashDetection() {
     StickCP2.Display.setCursor(10, 55);
     StickCP2.Display.println("BEAM BREAK");
     delay(200);
+    prevCount = prevDist = prevBlocked = -1;
 }
 
 // ──────────────────────────────────────────────
