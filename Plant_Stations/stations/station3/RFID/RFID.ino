@@ -70,12 +70,22 @@ void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
 
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+void onDataSentV3(const esp_now_send_info_t *info, esp_now_send_status_t status) {
+    onDataSent(info->des_addr, status);
+}
+#endif
+
 void initESPNow() {
     if (esp_now_init() != ESP_OK) {
         Serial.println("ESP-NOW init failed");
         return;
     }
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    esp_now_register_send_cb(onDataSentV3);
+#else
     esp_now_register_send_cb(onDataSent);
+#endif
 
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, peerMAC, 6);
