@@ -1,4 +1,4 @@
-// ── Station 3 ───────────────────────────────────────────────────
+// ── Station 3 ──────────────────────────────────────────────────
 // Open this folder in Arduino IDE and fill in your credentials before uploading.
 
 // WiFi (2.4 GHz access point)
@@ -10,29 +10,21 @@
 // both point to the same Mimir backend and accept InfluxDB line protocol
 // via /api/v1/push/influx/write.
 #define GC_INFLUX_URL ""
-#define GC_USER ""
-#define GC_PASS ""
+#define GC_USER       ""
+#define GC_PASS       ""
 
 // LCD debug overlay
 #define LCD_SHOW_DEBUG_INFO "1"
 
 // ── Station-specific settings ───────────────────────────────────
 
-// TODO: Set the plant name for this station
-#define PLANT_NAME ""
+#define PLANT_NAME "Plant3"
 
 #define WATER_DURATION_SEC 5
-#define GOLDEN_DURATION_SEC 5
 
-// Golden sticker UIDs (shared across all stations)
-#define GOLDEN_UID_1 ""
-#define GOLDEN_UID_2 ""
-#define GOLDEN_UID_3 ""
-
-// Paired watering unit MAC address
-// The watering unit prints its MAC on Serial and LCD at boot.
-// Convert  AA:BB:CC:DD:EE:FF  →  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
-//
-// Uncomment the line below to broadcast to ALL nearby watering units:
-// #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+// Set to {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF} to broadcast to ALL nearby units.
 #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+
+// Auto-write a URL to every scanned NFC sticker so phones open a webpage on tap.
+// Comment out the line below to disable auto-writing.
+#define NFC_WRITE_URL "https://play.grafana.org/d/anxh9qz/grafanacon2026-science-fair-iot"

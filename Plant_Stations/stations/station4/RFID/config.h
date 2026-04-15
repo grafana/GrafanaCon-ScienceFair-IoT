@@ -1,4 +1,4 @@
-// ── Station 3 ──────────────────────────────────────────────────
+// ── Station 4 ──────────────────────────────────────────────────
 // Open this folder in Arduino IDE and fill in your credentials before uploading.
 
 // WiFi (2.4 GHz access point)
@@ -18,11 +18,13 @@
 
 // ── Station-specific settings ───────────────────────────────────
 
-#define PLANT_NAME "Plant3"
+#define PLANT_NAME "Plant4"
 
-// Pin assignments for the Watering Unit on Grove Port A
-#define MOISTURE_PIN 33  // ADC input for moisture sensor
-#define PUMP_PIN     32  // Digital output for pump control
+#define WATER_DURATION_SEC 5
 
-// Moisture send interval (milliseconds)
-#define MOISTURE_SEND_INTERVAL_MS 5000
+// Set to {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF} to broadcast to ALL nearby units.
+#define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+
+// Auto-write a URL to every scanned NFC sticker so phones open a webpage on tap.
+// Comment out the line below to disable auto-writing.
+#define NFC_WRITE_URL "https://play.grafana.org/d/anxh9qz/grafanacon2026-science-fair-iot"
