@@ -3,12 +3,21 @@
 // Scan events are pushed to Grafana Cloud as Influx line-protocol metrics.
 //
 // Tags can be:
-//   - "Golden stickers" identified by UID  -> longer watering + special Grafana metric
-//   - Plant tags with NDEF text records   -> plant name sent as Grafana label
-//   - Blank/unknown tags                  -> identified by UID only
+//   - "Golden stickers" with NDEF text starting with "GOLDEN:" (e.g. "GOLDEN:Free T-Shirt")
+//   - Blank/normal tags -> trigger watering, plant name from config
 //
-// Write plant names to tags using a phone NFC app (e.g. "NFC Tools"):
-//   Add Record > Text > type the plant name (e.g. "Rosemary") > Write
+// Write golden stickers using a phone NFC app (e.g. "NFC Tools"):
+//   Add Record > Text > type "GOLDEN:Your Prize Here" > Write
+//   (Optionally add a URL/URI record first so phones also open a webpage.)
+//
+// Auto-write URL (optional, set NFC_WRITE_URL in config.h):
+//   Every scanned sticker that does not already contain a URI record gets the
+//   configured URL written to it automatically. The NDEF Text record (if any)
+//   is preserved so golden sticker prizes still work. Stickers that already
+//   have a URI are skipped (idempotent / safe to re-tap).
+//
+// Claimed golden stickers are persisted in NVS (flash) so they survive reboots.
+// Hold Button A during boot to clear the claimed list for a new event day.
 //
 // Hardware: M5StickC Plus2 + Unit RFID2 (MFRC522, I2C 0x28) on Grove Port A
 // Platform: Arduino M5Stack Board Manager
@@ -23,10 +32,14 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <esp_now.h>
+#include <Preferences.h>
 
 #include "config.h"
 
 MFRC522_I2C mfrc522(0x28, -1);
+Preferences prefs;
+
+static const int MAX_GOLDEN = 20;
 
 struct WaterCommand {
     uint8_t command;       // 1 = start pump
@@ -43,7 +56,7 @@ TaskHandle_t  httpTaskHandle = NULL;
 QueueHandle_t httpQueue;
 
 static int winnerCount = 0;
-static String claimedUIDs[3];
+static String claimedUIDs[MAX_GOLDEN];
 static int    claimedCount = 0;
 
 static unsigned long lastScanTime = 0;
@@ -54,9 +67,6 @@ static unsigned long displayHoldTime    = 0;
 static bool          displayShowingMessage = false;
 static const unsigned long GOLDEN_DISPLAY_MS = 30000;
 static const unsigned long NORMAL_DISPLAY_MS = 8000;
-
-static const char* goldenUIDs[] = { GOLDEN_UID_1, GOLDEN_UID_2, GOLDEN_UID_3 };
-static const int   NUM_GOLDEN   = 3;
 
 // ──────────────────────────────────────────────
 // ESP-NOW
@@ -70,22 +80,12 @@ void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
 
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-void onDataSentV3(const esp_now_send_info_t *info, esp_now_send_status_t status) {
-    onDataSent(info->des_addr, status);
-}
-#endif
-
 void initESPNow() {
     if (esp_now_init() != ESP_OK) {
         Serial.println("ESP-NOW init failed");
         return;
     }
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    esp_now_register_send_cb(onDataSentV3);
-#else
     esp_now_register_send_cb(onDataSent);
-#endif
 
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, peerMAC, 6);
@@ -204,113 +204,267 @@ String uidToHex(byte *uid, byte size) {
     return hex;
 }
 
-bool isGoldenSticker(const String &uid) {
-    for (int i = 0; i < NUM_GOLDEN; i++) {
-        if (strlen(goldenUIDs[i]) > 0 && uid.equalsIgnoreCase(goldenUIDs[i])) {
-            return true;
-        }
+// ──────────────────────────────────────────────
+// NVS persistence for claimed golden stickers
+// ──────────────────────────────────────────────
+
+void loadClaimedFromNVS() {
+    prefs.begin("golden", true);
+    claimedCount = prefs.getInt("count", 0);
+    winnerCount  = claimedCount;
+    for (int i = 0; i < claimedCount && i < MAX_GOLDEN; i++) {
+        String key = "uid" + String(i);
+        claimedUIDs[i] = prefs.getString(key.c_str(), "");
+    }
+    prefs.end();
+    Serial.printf("Loaded %d claimed golden stickers from NVS\n", claimedCount);
+}
+
+void saveClaimedToNVS() {
+    prefs.begin("golden", false);
+    prefs.putInt("count", claimedCount);
+    String key = "uid" + String(claimedCount - 1);
+    prefs.putString(key.c_str(), claimedUIDs[claimedCount - 1]);
+    prefs.end();
+}
+
+void clearClaimedNVS() {
+    prefs.begin("golden", false);
+    prefs.clear();
+    prefs.end();
+    claimedCount = 0;
+    winnerCount  = 0;
+    Serial.println("NVS claimed list cleared");
+}
+
+bool isAlreadyClaimed(const String &uid) {
+    for (int i = 0; i < claimedCount; i++) {
+        if (claimedUIDs[i].equalsIgnoreCase(uid)) return true;
     }
     return false;
 }
 
 // ──────────────────────────────────────────────
-// NDEF text reader for NTAG215
+// NDEF reader for NTAG215
 //
-// Reads raw pages from the tag starting at page 4 and extracts
-// the text payload from the first NDEF Text record (type "T").
+// Reads raw pages from the tag and iterates through all NDEF records.
+// Returns the text payload of the first Text record (type "T" / 0x54),
+// skipping over URI records (type "U" / 0x55) and anything else.
 //
-// Phone apps like "NFC Tools" write standard NDEF:
-//   Page 4+: 03 <len> D1 01 <plen> 54 <status> <lang...> <text...> FE
+// Sets ndefHasUri = true if a URI record is found anywhere in the
+// message, so the caller knows whether a URL still needs writing.
+//
+// Supports multi-record NDEF messages (e.g. URI + Text written
+// via NFC Tools on a phone).
 // ──────────────────────────────────────────────
 
-String readNDEFText() {
+static bool ndefHasUri = false;
+
+String readNDEF() {
+    ndefHasUri = false;
+
     byte buffer[18];
     byte bufSize;
-    byte pages[32];
+    const int MAX_READ = 96;
+    byte pages[MAX_READ];
     int  totalRead = 0;
 
-    // Read pages 4-11 (32 bytes) in two MIFARE_Read calls (each reads 16 bytes / 4 pages)
-    for (byte startPage = 4; startPage <= 8; startPage += 4) {
+    for (byte startPage = 4; startPage <= 24; startPage += 4) {
         bufSize = sizeof(buffer);
         if (mfrc522.MIFARE_Read(startPage, buffer, &bufSize) != MFRC522_I2C::STATUS_OK) {
             Serial.printf("Failed to read page %d\n", startPage);
-            return "";
+            break;
         }
-        int copyLen = min((int)(bufSize - 2), (int)(32 - totalRead));  // bufSize includes 2 CRC bytes
+        int copyLen = min((int)(bufSize - 2), (int)(MAX_READ - totalRead));
         memcpy(pages + totalRead, buffer, copyLen);
         totalRead += copyLen;
     }
 
     Serial.print("Raw NDEF bytes: ");
-    for (int i = 0; i < totalRead; i++) Serial.printf("%02X ", pages[i]);
+    for (int i = 0; i < min(totalRead, 48); i++) Serial.printf("%02X ", pages[i]);
+    if (totalRead > 48) Serial.print("...");
     Serial.println();
 
     // Find NDEF message TLV (type 0x03)
     int pos = 0;
     while (pos < totalRead) {
-        if (pages[pos] == 0x03) break;     // NDEF message TLV
-        if (pages[pos] == 0x00) { pos++; continue; }  // NULL TLV
-        if (pages[pos] == 0xFE) return "";             // terminator, no NDEF
-        // Other TLV: skip by length
+        if (pages[pos] == 0x03) break;
+        if (pages[pos] == 0x00) { pos++; continue; }
+        if (pages[pos] == 0xFE) return "";
         if (pos + 1 < totalRead) { pos += 2 + pages[pos + 1]; continue; }
         break;
     }
     if (pos >= totalRead || pages[pos] != 0x03) return "";
 
-    pos++;  // skip TLV type
+    pos++;  // skip TLV type byte
     if (pos >= totalRead) return "";
-    int ndefLen = pages[pos++];  // TLV length
 
-    // Parse NDEF record header
-    if (pos >= totalRead) return "";
-    byte header = pages[pos++];
-    // byte tnf = header & 0x07;  // should be 0x01 (NFC Forum well-known type)
-    bool sr = (header >> 4) & 1;  // short record flag
-
-    if (pos >= totalRead) return "";
-    byte typeLen = pages[pos++];
-
-    if (pos >= totalRead) return "";
-    int payloadLen;
-    if (sr) {
-        payloadLen = pages[pos++];
+    // TLV length: single byte, or 3-byte form (FF hi lo) for messages > 254 bytes
+    int ndefMsgLen;
+    if (pages[pos] == 0xFF) {
+        pos++;
+        if (pos + 1 >= totalRead) return "";
+        ndefMsgLen = ((int)pages[pos] << 8) | pages[pos + 1];
+        pos += 2;
     } else {
-        if (pos + 3 >= totalRead) return "";
-        payloadLen = ((uint32_t)pages[pos] << 24) | ((uint32_t)pages[pos+1] << 16)
-                   | ((uint32_t)pages[pos+2] << 8) | pages[pos+3];
-        pos += 4;
+        ndefMsgLen = pages[pos++];
+    }
+    int ndefMsgEnd = pos + ndefMsgLen;
+    if (ndefMsgEnd > totalRead) ndefMsgEnd = totalRead;
+
+    String textResult = "";
+
+    // Walk through NDEF records inside the message
+    while (pos < ndefMsgEnd) {
+        byte hdr = pages[pos++];
+        byte tnf  = hdr & 0x07;
+        bool me   = (hdr >> 6) & 1;
+        bool sr   = (hdr >> 4) & 1;
+        bool il   = (hdr >> 3) & 1;
+
+        if (pos >= ndefMsgEnd) break;
+        byte typeLen = pages[pos++];
+
+        int payloadLen;
+        if (sr) {
+            if (pos >= ndefMsgEnd) break;
+            payloadLen = pages[pos++];
+        } else {
+            if (pos + 3 >= ndefMsgEnd) break;
+            payloadLen = ((uint32_t)pages[pos] << 24) | ((uint32_t)pages[pos+1] << 16)
+                       | ((uint32_t)pages[pos+2] << 8) | pages[pos+3];
+            pos += 4;
+        }
+
+        if (il) {
+            if (pos >= ndefMsgEnd) break;
+            pos += pages[pos] + 1;  // skip ID-length byte + ID
+        }
+
+        byte recordType = 0;
+        if (typeLen >= 1 && pos < ndefMsgEnd) recordType = pages[pos];
+        pos += typeLen;
+
+        int payloadStart = pos;
+        pos += payloadLen;
+
+        if (tnf == 0x01 && typeLen == 1 && recordType == 0x55) {
+            ndefHasUri = true;
+            Serial.println("Found NDEF URI record");
+        } else if (tnf == 0x01 && typeLen == 1 && recordType == 0x54 && textResult.length() == 0) {
+            if (payloadStart < ndefMsgEnd) {
+                byte st      = pages[payloadStart];
+                byte langLen = st & 0x3F;
+                int  txtOff  = payloadStart + 1 + langLen;
+                int  txtLen  = payloadLen - 1 - langLen;
+                if (txtLen > 0 && txtOff + txtLen <= totalRead) {
+                    char text[64] = {0};
+                    int cl = min(txtLen, 63);
+                    memcpy(text, pages + txtOff, cl);
+                    text[cl] = '\0';
+                    textResult = String(text);
+                    Serial.print("Found NDEF Text: ");
+                    Serial.println(textResult);
+                }
+            }
+        }
+
+        if (me) break;
     }
 
-    // Check type is "T" (0x54) for text record
-    if (pos >= totalRead) return "";
-    if (typeLen != 1 || pages[pos] != 0x54) {
-        Serial.println("NDEF record is not Text type");
-        return "";
-    }
-    pos++;  // skip type byte
-
-    // Parse text payload: status byte (language code length) + language + text
-    if (pos >= totalRead) return "";
-    byte status = pages[pos++];
-    byte langLen = status & 0x3F;
-    pos += langLen;  // skip language code (e.g. "en")
-
-    int textLen = payloadLen - 1 - langLen;
-    if (textLen <= 0 || pos + textLen > totalRead) return "";
-
-    char text[32] = {0};
-    int copyLen = min(textLen, 31);
-    memcpy(text, pages + pos, copyLen);
-    text[copyLen] = '\0';
-
-    return String(text);
+    return textResult;
 }
+
+// ──────────────────────────────────────────────
+// NDEF URI writer for NTAG215
+//
+// Writes a URI NDEF record to the tag using MIFARE_Ultralight_Write
+// (4 bytes per page). If the tag already contained a Text record
+// (e.g. "GOLDEN:Free T-Shirt"), that record is preserved as a second
+// NDEF record so both the phone URL and the M5Stick prize still work.
+//
+// Guarded by #ifdef NFC_WRITE_URL — the feature compiles out entirely
+// when the define is commented out in config.h.
+// ──────────────────────────────────────────────
+
+#ifdef NFC_WRITE_URL
+bool writeNDEFUri(const String &preserveText) {
+    const char *url = NFC_WRITE_URL;
+
+    // Match longest URI prefix first to pick the right NDEF abbreviation code
+    byte prefixCode    = 0x00;
+    const char *urlBody = url;
+
+    if      (strncmp(url, "https://www.", 12) == 0) { prefixCode = 0x02; urlBody += 12; }
+    else if (strncmp(url, "http://www.",  11) == 0) { prefixCode = 0x01; urlBody += 11; }
+    else if (strncmp(url, "https://",     8)  == 0) { prefixCode = 0x04; urlBody += 8;  }
+    else if (strncmp(url, "http://",      7)  == 0) { prefixCode = 0x03; urlBody += 7;  }
+
+    int urlBodyLen    = strlen(urlBody);
+    int uriPayloadLen = 1 + urlBodyLen;   // prefix byte + URL body
+
+    bool hasText       = preserveText.length() > 0;
+    int  textPayloadLen = 0;
+    if (hasText) textPayloadLen = 1 + 2 + preserveText.length();  // status + "en" + text
+
+    // --- Build NDEF records into msg[] ---
+    byte msg[160];
+    int  p = 0;
+
+    // URI record  (MB=1, SR=1, TNF=001; ME depends on whether a Text record follows)
+    msg[p++] = hasText ? 0x91 : 0xD1;
+    msg[p++] = 1;                        // type length
+    msg[p++] = (byte)uriPayloadLen;      // payload length (short record)
+    msg[p++] = 0x55;                     // type "U"
+    msg[p++] = prefixCode;
+    memcpy(msg + p, urlBody, urlBodyLen);
+    p += urlBodyLen;
+
+    // Optional Text record to preserve golden-sticker data
+    if (hasText) {
+        msg[p++] = 0x51;                // MB=0, ME=1, SR=1, TNF=001
+        msg[p++] = 1;                   // type length
+        msg[p++] = (byte)textPayloadLen; // payload length
+        msg[p++] = 0x54;                // type "T"
+        msg[p++] = 0x02;                // status: UTF-8, lang len = 2
+        msg[p++] = 'e';
+        msg[p++] = 'n';
+        memcpy(msg + p, preserveText.c_str(), preserveText.length());
+        p += preserveText.length();
+    }
+
+    // --- Wrap in TLV: 03 <len> <msg…> FE ---
+    byte tlv[168];
+    int  t = 0;
+    tlv[t++] = 0x03;
+    tlv[t++] = (byte)p;   // message length (always < 255 for our URLs)
+    memcpy(tlv + t, msg, p);
+    t += p;
+    tlv[t++] = 0xFE;      // terminator TLV
+
+    while (t % 4 != 0) tlv[t++] = 0x00;  // pad to page boundary
+
+    int numPages = t / 4;
+    Serial.printf("Writing NDEF URI (%d bytes, %d pages)\n", t, numPages);
+
+    for (int i = 0; i < numPages; i++) {
+        byte page = 4 + i;
+        if (mfrc522.MIFARE_Ultralight_Write(page, tlv + (i * 4), 4) != MFRC522_I2C::STATUS_OK) {
+            Serial.printf("Write failed on page %d\n", page);
+            return false;
+        }
+    }
+
+    Serial.println("NDEF URI written OK");
+    return true;
+}
+#endif
 
 // ──────────────────────────────────────────────
 // Golden sticker LCD animation
 // ──────────────────────────────────────────────
 
-void showGoldenSticker(const String &uid) {
+void showGoldenSticker(const String &prize) {
     for (int flash = 0; flash < 5; flash++) {
         StickCP2.Display.fillScreen(YELLOW);
         delay(100);
@@ -326,15 +480,19 @@ void showGoldenSticker(const String &uid) {
 
     StickCP2.Display.setTextColor(WHITE);
     StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 45);
-    StickCP2.Display.println("Pick up your");
-    StickCP2.Display.setCursor(10, 68);
-    StickCP2.Display.println("gift at booth");
+    StickCP2.Display.setCursor(10, 40);
+    if (prize.length() > 0) {
+        StickCP2.Display.println(prize);
+    } else {
+        StickCP2.Display.println("A prize!");
+    }
 
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 100);
-    StickCP2.Display.println("GOLDEN STICKER");
+    StickCP2.Display.setTextColor(CYAN);
+    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setCursor(10, 70);
+    StickCP2.Display.println("Pick up at");
+    StickCP2.Display.setCursor(10, 93);
+    StickCP2.Display.println("the booth");
 }
 
 // ──────────────────────────────────────────────
@@ -395,8 +553,22 @@ void setup() {
     StickCP2.Display.setTextSize(2);
     StickCP2.Display.setCursor(10, 10);
     StickCP2.Display.println("RFID Reader");
+
+    // Hold Button A during boot to reset golden sticker claimed list
+    StickCP2.update();
+    if (StickCP2.BtnA.isPressed()) {
+        clearClaimedNVS();
+        StickCP2.Display.setTextColor(YELLOW);
+        StickCP2.Display.setCursor(10, 40);
+        StickCP2.Display.println("NVS CLEARED!");
+        delay(2000);
+    } else {
+        loadClaimedFromNVS();
+    }
+
+    StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 40);
+    StickCP2.Display.setCursor(10, 60);
     StickCP2.Display.println("Connecting WiFi...");
 
     Wire.begin(32, 33);
@@ -446,29 +618,31 @@ void loop() {
     Serial.print("Tag UID: ");
     Serial.println(uidHex);
 
-    bool golden = isGoldenSticker(uidHex);
+    // Read all NDEF records: finds Text for golden stickers, flags URI presence
+    String ndefText = readNDEF();
+
+#ifdef NFC_WRITE_URL
+    if (!ndefHasUri) {
+        writeNDEFUri(ndefText);
+    }
+#endif
+
+    bool golden = ndefText.startsWith("GOLDEN:");
     uint8_t duration = WATER_DURATION_SEC;
     String prize = "";
     bool newWinner = false;
 
     if (golden) {
-        // Check if this golden UID was already claimed
-        bool alreadyClaimed = false;
-        for (int i = 0; i < claimedCount; i++) {
-            if (claimedUIDs[i].equalsIgnoreCase(uidHex)) {
-                alreadyClaimed = true;
-                break;
-            }
-        }
-        if (!alreadyClaimed && claimedCount < 3) {
+        prize = ndefText.substring(7);  // everything after "GOLDEN:"
+        if (isAlreadyClaimed(uidHex)) {
+            Serial.println("Golden sticker already claimed, watering only");
+        } else if (claimedCount < MAX_GOLDEN) {
             claimedUIDs[claimedCount++] = uidHex;
             winnerCount++;
             newWinner = true;
-            prize = readNDEFText();
+            saveClaimedToNVS();
             Serial.printf("*** NEW GOLDEN STICKER! Winner #%d ***\n", winnerCount);
-            if (prize.length() > 0) Serial.println("Prize: " + prize);
-        } else {
-            Serial.println("Golden sticker already claimed, watering only");
+            Serial.println("Prize: " + prize);
         }
     } else {
         Serial.print("Normal tag on station: ");
@@ -477,7 +651,7 @@ void loop() {
 
     // --- Update LCD ---
     if (golden) {
-        showGoldenSticker(uidHex);
+        showGoldenSticker(prize);
     } else {
         showPlantTag(String(PLANT_NAME), duration);
     }
