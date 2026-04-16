@@ -116,25 +116,19 @@ void drawUI() {
     StickCP2.Display.fillScreen(BLACK);
 
     StickCP2.Display.setTextColor(CYAN);
-    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setTextSize(3);
     StickCP2.Display.setCursor(10, 5);
-    StickCP2.Display.printf("PIR: %s", ZONE);
+    StickCP2.Display.printf("Motion: %s", ZONE);
 
     StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextSize(3);
+    StickCP2.Display.setTextSize(4);
     StickCP2.Display.setCursor(10, 40);
     StickCP2.Display.printf("%d", motionCount);
 
     StickCP2.Display.setTextColor(TFT_DARKGREY);
     StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 75);
+    StickCP2.Display.setCursor(10, 85);
     StickCP2.Display.println("detections");
-
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 108);
-    StickCP2.Display.print("MAC:");
-    StickCP2.Display.println(WiFi.macAddress());
 }
 
 void flashDetection() {
@@ -164,7 +158,7 @@ void setup() {
     StickCP2.Display.setTextColor(CYAN);
     StickCP2.Display.setTextSize(2);
     StickCP2.Display.setCursor(10, 10);
-    StickCP2.Display.printf("PIR: %s", ZONE);
+    StickCP2.Display.printf("Motion: %s", ZONE);
     StickCP2.Display.setTextSize(1);
     StickCP2.Display.setCursor(10, 40);
     StickCP2.Display.println("Connecting WiFi...");

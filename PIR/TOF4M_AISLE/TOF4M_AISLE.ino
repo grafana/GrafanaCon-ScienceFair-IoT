@@ -141,7 +141,7 @@ void drawUI() {
         StickCP2.Display.setTextColor(CYAN);
         StickCP2.Display.setTextSize(2);
         StickCP2.Display.setCursor(10, 5);
-        StickCP2.Display.printf("ToF: %s", ZONE);
+        StickCP2.Display.printf("Traffic: %s", ZONE);
 
         StickCP2.Display.setTextColor(TFT_DARKGREY);
         StickCP2.Display.setTextSize(2);

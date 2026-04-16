@@ -203,45 +203,39 @@ void drawUI() {
     StickCP2.Display.fillScreen(BLACK);
 
     StickCP2.Display.setTextColor(CYAN);
-    StickCP2.Display.setTextSize(2);
+    StickCP2.Display.setTextSize(3);
     StickCP2.Display.setCursor(10, 5);
-    StickCP2.Display.printf("PIR: %s", ZONE);
+    StickCP2.Display.printf("%s", ZONE);
 
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(3);
-    StickCP2.Display.setCursor(10, 30);
+    StickCP2.Display.setCursor(10, 35);
     StickCP2.Display.printf("%d", visitCount);
 
     StickCP2.Display.setTextColor(TFT_DARKGREY);
     StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(100, 35);
+    StickCP2.Display.setCursor(100, 40);
     StickCP2.Display.println("visits");
 
     if (inSession) {
         bool pirActive = digitalRead(PIR_PIN) == HIGH;
         int elapsed = (lastMotionAt - sessionStart) / 1000;
-        StickCP2.Display.setTextSize(2);
+        StickCP2.Display.setTextSize(3);
         StickCP2.Display.setCursor(10, 75);
         if (pirActive) {
             elapsed = (millis() - sessionStart) / 1000;
             StickCP2.Display.setTextColor(YELLOW);
-            StickCP2.Display.printf("Present %ds", elapsed);
+            StickCP2.Display.printf("Here %ds", elapsed);
         } else {
             StickCP2.Display.setTextColor(ORANGE);
             StickCP2.Display.printf("Left? %ds", elapsed);
         }
     } else {
         StickCP2.Display.setTextColor(TFT_DARKGREY);
-        StickCP2.Display.setTextSize(2);
+        StickCP2.Display.setTextSize(3);
         StickCP2.Display.setCursor(10, 75);
         StickCP2.Display.println("Waiting...");
     }
-
-    StickCP2.Display.setTextColor(TFT_DARKGREY);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 108);
-    StickCP2.Display.print("MAC:");
-    StickCP2.Display.println(WiFi.macAddress());
 }
 
 // ──────────────────────────────────────────────
@@ -258,7 +252,7 @@ void setup() {
     StickCP2.Display.setTextColor(CYAN);
     StickCP2.Display.setTextSize(2);
     StickCP2.Display.setCursor(10, 10);
-    StickCP2.Display.printf("PIR: %s", ZONE);
+    StickCP2.Display.printf("Presence: %s", ZONE);
     StickCP2.Display.setTextSize(1);
     StickCP2.Display.setCursor(10, 40);
     StickCP2.Display.println("Connecting WiFi...");

@@ -221,25 +221,19 @@ void setup() {
 void drawUI(int moisturePct, bool pumping, int countdown) {
     StickCP2.Display.fillScreen(BLACK);
 
-    // Title
-    StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 5);
-    StickCP2.Display.println("Watering");
-
     // Moisture -- green when wet (high %), red when dry (low %)
-    StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 35);
+    StickCP2.Display.setTextSize(3);
+    StickCP2.Display.setCursor(10, 5);
     if (moisturePct > 25) {
         StickCP2.Display.setTextColor(GREEN);
     } else {
         StickCP2.Display.setTextColor(RED);
     }
-    StickCP2.Display.printf("Moisture:%d%%", moisturePct);
+    StickCP2.Display.printf("Moist:%d%%", moisturePct);
 
     // Pump status
     StickCP2.Display.setTextSize(2);
-    StickCP2.Display.setCursor(10, 65);
+    StickCP2.Display.setCursor(10, 40);
     if (pumping) {
         StickCP2.Display.setTextColor(CYAN);
         StickCP2.Display.printf("PUMP ON  %ds", countdown);
@@ -251,7 +245,7 @@ void drawUI(int moisturePct, bool pumping, int countdown) {
     // MAC address for pairing reference
     StickCP2.Display.setTextColor(TFT_DARKGREY);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.setCursor(10, 95);
+    StickCP2.Display.setCursor(10, 70);
     StickCP2.Display.print("MAC:");
     StickCP2.Display.println(WiFi.macAddress());
 }
