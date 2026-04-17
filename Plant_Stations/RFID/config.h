@@ -29,3 +29,11 @@
 // Uncomment the line below to broadcast to ALL nearby watering units:
 // #define WATERING_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 #define WATERING_MAC {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
+// Auto-write a URL to every scanned NFC sticker so phones open a webpage on tap.
+// The RFID unit writes the URL once; stickers that already have it are skipped.
+// Comment out the line below to disable auto-writing.
+// Tracked URL follows Grafana's internal tracking-URL schema:
+//   src  = Marketing Source   (required)
+//   camp = Marketing Campaign (required)
+#define NFC_WRITE_URL "https://play.grafana.org/d/anxh9qz/grafanacon26-iot?src=nfc-sticker&camp=grafanacon-science-fair-iot"
