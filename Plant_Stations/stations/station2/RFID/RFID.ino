@@ -2,14 +2,6 @@
 // RFID2 Unit reads NTAG215 NFC stickers and triggers a remote Watering unit via ESP-NOW.
 // Scan events are pushed to Grafana Cloud as Influx line-protocol metrics.
 //
-// Tags can be:
-//   - "Golden stickers" with NDEF text starting with "GOLDEN:" (e.g. "GOLDEN:Free T-Shirt")
-//   - Blank/normal tags -> trigger watering, plant name from config
-//
-// Write golden stickers using a phone NFC app (e.g. "NFC Tools"):
-//   Add Record > Text > type "GOLDEN:Your Prize Here" > Write
-//   (Optionally add a URL/URI record first so phones also open a webpage.)
-//
 // Auto-write URL (optional, set NFC_WRITE_URL in config.h):
 //   Every scanned sticker that does not already contain a URI record gets the
 //   configured URL written to it automatically. The NDEF Text record (if any)
@@ -75,7 +67,13 @@ static const unsigned long NORMAL_DISPLAY_MS = 8000;
 static uint8_t peerMAC[] = WATERING_MAC;
 static bool espNowReady = false;
 
+// ESP32 Arduino core 3.x changed the send-callback signature to take
+// `const wifi_tx_info_t *` instead of `const uint8_t *mac_addr`.
+#if defined(ESP_ARDUINO_VERSION) && ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+#else
 void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+#endif
     Serial.print("ESP-NOW send status: ");
     Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
 }
