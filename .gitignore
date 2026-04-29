@@ -9,6 +9,8 @@ PIR/TOF4M_AISLE/config.h
 ENV-III/config.h
 Environmental/config.h
 UltraSonic/config.h
+EarthMoisture/config.h
+Heartrate/config.h
 # Local credentials backup
 /tmp/
 
