@@ -11,3 +11,9 @@ Environmental/config.h
 UltraSonic/config.h
 # Local credentials backup
 /tmp/
+
+# Python virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
